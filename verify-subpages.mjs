@@ -8,6 +8,7 @@ const pages = [
   { name: 'AI聊天', path: '/pages/aitools/aichat/' },
   { name: '论坛', path: '/pages/forum/' },
   { name: '音乐', path: '/pages/music/' },
+  { name: '听音识阶', path: '/pages/music/sound-to-scale/' },
 ];
 
 async function verify() {

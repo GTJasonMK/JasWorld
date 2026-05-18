@@ -13,11 +13,13 @@ const SCALE_TYPES = [
 const MIN_FREQ = 27.5;
 const MAX_FREQ = 4200;
 const BUFFER_SIZE = 4096;
-const FRAME_INTERVAL = 70;
+const FRAME_INTERVAL = 80;
 const SILENCE_GAP_MS = 260;
-const MIN_SEGMENT_FRAMES = 2;
-const MIN_PITCH_CONFIDENCE = 0.45;
-const NOTE_CHANGE_CONFIRM_FRAMES = 2;
+const MIN_SEGMENT_FRAMES = 3;
+const MIN_PITCH_CONFIDENCE = 0.7;
+const YIN_THRESHOLD = 0.16;
+const YIN_FALLBACK_THRESHOLD = 0.24;
+const NOTE_CHANGE_CONFIRM_FRAMES = 3;
 const NOTE_PLAY_SECONDS = 1.25;
 
 const els = {
@@ -39,6 +41,7 @@ const els = {
 
 let audioContext = null;
 let analyser = null;
+let inputGain = null;
 let micSource = null;
 let micStream = null;
 let timeBuffer = null;
@@ -99,56 +102,87 @@ function frequencyToNote(frequency) {
     };
 }
 
+function parabolicMinimum(values, index) {
+    const left = values[index - 1];
+    const center = values[index];
+    const right = values[index + 1];
+    const divisor = left - 2 * center + right;
+    if (!Number.isFinite(divisor) || Math.abs(divisor) < 0.000001) return index;
+    return index + clamp((left - right) / (2 * divisor), -0.5, 0.5);
+}
+
 function detectPitch(buffer, sampleRate, threshold) {
+    let sum = 0;
     let sumSquares = 0;
     for (let i = 0; i < buffer.length; i += 1) {
-        sumSquares += buffer[i] * buffer[i];
+        const sample = buffer[i];
+        sum += sample;
+        sumSquares += sample * sample;
     }
 
     const rms = Math.sqrt(sumSquares / buffer.length);
     if (rms < threshold) return { frequency: null, confidence: 0, rms, reason: 'quiet' };
 
+    const mean = sum / buffer.length;
     const minLag = Math.floor(sampleRate / MAX_FREQ);
     const maxLag = Math.min(Math.floor(sampleRate / MIN_FREQ), buffer.length - 1);
-    const correlations = new Float32Array(maxLag + 1);
-    let bestLag = -1;
-    let bestCorrelation = 0;
+    const yin = new Float32Array(maxLag + 1);
 
-    for (let lag = minLag; lag <= maxLag; lag += 1) {
-        let dot = 0;
-        let leftPower = 0;
-        let rightPower = 0;
-        const size = buffer.length - lag;
+    for (let tau = 1; tau <= maxLag; tau += 1) {
+        let difference = 0;
+        const size = buffer.length - tau;
 
         for (let i = 0; i < size; i += 1) {
-            const left = buffer[i];
-            const right = buffer[i + lag];
-            dot += left * right;
-            leftPower += left * left;
-            rightPower += right * right;
+            const delta = (buffer[i] - mean) - (buffer[i + tau] - mean);
+            difference += delta * delta;
         }
 
-        const correlation = dot / (Math.sqrt(leftPower * rightPower) || 1);
-        correlations[lag] = correlation;
-        if (correlation > bestCorrelation) {
-            bestCorrelation = correlation;
-            bestLag = lag;
+        yin[tau] = difference;
+    }
+
+    let cumulativeDifference = 0;
+    let bestLag = -1;
+    let bestValue = Number.POSITIVE_INFINITY;
+
+    yin[0] = 1;
+    for (let tau = 1; tau <= maxLag; tau += 1) {
+        cumulativeDifference += yin[tau];
+        yin[tau] = cumulativeDifference > 0 ? (yin[tau] * tau) / cumulativeDifference : 1;
+
+        if (tau >= minLag && yin[tau] < bestValue) {
+            bestValue = yin[tau];
+            bestLag = tau;
         }
     }
 
-    if (bestLag < 0 || bestCorrelation < MIN_PITCH_CONFIDENCE) {
-        return { frequency: null, confidence: bestCorrelation, rms, reason: 'unclear' };
+    let selectedLag = -1;
+    for (let tau = minLag; tau <= maxLag; tau += 1) {
+        if (yin[tau] >= YIN_THRESHOLD) continue;
+
+        while (tau + 1 <= maxLag && yin[tau + 1] < yin[tau]) {
+            tau += 1;
+        }
+
+        selectedLag = tau;
+        break;
     }
 
-    const prev = correlations[bestLag - 1] || bestCorrelation;
-    const next = correlations[bestLag + 1] || bestCorrelation;
-    const divisor = 2 * (prev - 2 * bestCorrelation + next);
-    const offset = Math.abs(divisor) > 0.0001 ? (prev - next) / divisor : 0;
-    const refinedLag = bestLag + clamp(offset, -0.5, 0.5);
+    if (selectedLag < 0 && bestValue <= YIN_FALLBACK_THRESHOLD) {
+        selectedLag = bestLag;
+    }
+
+    const confidence = selectedLag > 0 ? 1 - yin[selectedLag] : Math.max(0, 1 - bestValue);
+    if (selectedLag < 0 || confidence < MIN_PITCH_CONFIDENCE) {
+        return { frequency: null, confidence, rms, reason: 'unclear' };
+    }
+
+    const refinedLag = selectedLag > 1 && selectedLag < maxLag
+        ? parabolicMinimum(yin, selectedLag)
+        : selectedLag;
 
     return {
         frequency: sampleRate / refinedLag,
-        confidence: bestCorrelation,
+        confidence,
         rms,
         reason: 'pitched',
     };
@@ -190,8 +224,18 @@ function renderCurrent(noteInfo = null) {
 }
 
 function getRmsThreshold() {
-    const sensitivity = clamp(Number(els.sensitivity.value || 8), 1, 10);
-    return 0.038 - ((sensitivity - 1) / 9) * 0.034;
+    const sensitivity = clamp(Number(els.sensitivity.value || 9), 1, 10);
+    return 0.016 - ((sensitivity - 1) / 9) * 0.014;
+}
+
+function getInputGainValue() {
+    const sensitivity = clamp(Number(els.sensitivity.value || 9), 1, 10);
+    return 1 + Math.pow((sensitivity - 1) / 9, 1.4) * 7;
+}
+
+function syncInputGain() {
+    if (!inputGain) return;
+    inputGain.gain.setTargetAtTime(getInputGainValue(), audioContext?.currentTime || 0, 0.015);
 }
 
 function getAudioVolume() {
@@ -484,6 +528,49 @@ function renderSequence() {
     setPlaybackMode(playbackMode === 'playing' ? 'playing' : 'idle');
 }
 
+function median(values) {
+    if (values.length === 0) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    const middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0
+        ? (sorted[middle - 1] + sorted[middle]) / 2
+        : sorted[middle];
+}
+
+function cloneFrameWithMidi(frame, midi) {
+    const frequency = midiToFrequency(midi);
+    return {
+        ...frame,
+        midi,
+        note: midiToNote(midi),
+        pitchClass: ((midi % 12) + 12) % 12,
+        frequency,
+        cents: 0,
+    };
+}
+
+function stabilizePitchFrames(frames) {
+    if (frames.length < 3) return frames;
+
+    const stabilized = frames.map(frame => ({ ...frame }));
+    for (let index = 1; index < stabilized.length - 1; index += 1) {
+        const previous = stabilized[index - 1];
+        const current = stabilized[index];
+        const next = stabilized[index + 1];
+        const isIsolatedSpike = previous.midi === next.midi && current.midi !== previous.midi;
+        const isOctaveSpike = previous.pitchClass === current.pitchClass
+            && next.pitchClass === current.pitchClass
+            && Math.abs(current.midi - previous.midi) >= 12
+            && Math.abs(current.midi - next.midi) >= 12;
+
+        if (isIsolatedSpike || isOctaveSpike) {
+            stabilized[index] = cloneFrameWithMidi(current, previous.midi);
+        }
+    }
+
+    return stabilized;
+}
+
 function summarizeSegment(segment) {
     if (segment.length < MIN_SEGMENT_FRAMES) return null;
 
@@ -508,18 +595,18 @@ function summarizeSegment(segment) {
         }
     });
 
-    if (bestMidi === null || bestWeight / totalWeight < 0.32) return null;
+    if (bestMidi === null || bestWeight / totalWeight < 0.42) return null;
 
     const frames = midiFrames.get(bestMidi);
-    const averageFrequency = frames.reduce((sum, frame) => sum + frame.frequency, 0) / frames.length;
-    const averageCents = frames.reduce((sum, frame) => sum + frame.cents, 0) / frames.length;
+    const medianFrequency = median(frames.map(frame => frame.frequency));
+    const medianCents = median(frames.map(frame => frame.cents));
 
     return {
         note: midiToNote(bestMidi),
         midi: bestMidi,
         pitchClass: ((bestMidi % 12) + 12) % 12,
-        frequency: averageFrequency,
-        cents: averageCents,
+        frequency: medianFrequency,
+        cents: medianCents,
     };
 }
 
@@ -590,7 +677,7 @@ function splitFramesIntoSegments(frames) {
 function extractNotesFromFrames(frames) {
     if (frames.length < MIN_SEGMENT_FRAMES) return [];
 
-    return splitFramesIntoSegments(frames)
+    return splitFramesIntoSegments(stabilizePitchFrames(frames))
         .map(summarizeSegment)
         .filter(Boolean);
 }
@@ -601,7 +688,7 @@ function getRecordingFailureMessage() {
     }
 
     if (recordingStats.maxRms < getRmsThreshold()) {
-        return '声音太小, 请靠近麦克风';
+        return getVolumeHint();
     }
 
     if (recordingStats.loudFrames > 0 && recordingStats.maxConfidence < MIN_PITCH_CONFIDENCE) {
@@ -663,26 +750,94 @@ function tick(now = performance.now()) {
     if (now - lastFrameAt < FRAME_INTERVAL) return;
     lastFrameAt = now;
 
+    syncInputGain();
     analyser.getFloatTimeDomainData(timeBuffer);
     const threshold = getRmsThreshold();
     handlePitch(detectPitch(timeBuffer, audioContext.sampleRate, threshold), now);
 }
 
 async function getMicrophoneStream() {
-    const constraints = {
-        audio: {
+    const candidates = [
+        {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: true,
+            channelCount: 1,
+        },
+        {
             echoCancellation: false,
             noiseSuppression: false,
             autoGainControl: false,
+            channelCount: 1,
         },
-        video: false,
-    };
+        true,
+    ];
 
-    try {
-        return await navigator.mediaDevices.getUserMedia(constraints);
-    } catch (error) {
-        console.warn('[听音识阶] 精确音频约束失败,改用默认麦克风约束', error);
-        return navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    for (const audio of candidates) {
+        try {
+            return await navigator.mediaDevices.getUserMedia({ audio, video: false });
+        } catch (error) {
+            console.warn('[听音识阶] 麦克风约束失败,尝试下一组约束', error);
+        }
+    }
+
+    return navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: false,
+    });
+}
+
+function describeInputTrack() {
+    const [track] = micStream?.getAudioTracks?.() || [];
+    if (!track) return;
+
+    const settings = track.getSettings?.() || {};
+    const parts = [
+        settings.sampleRate ? `${settings.sampleRate}Hz` : null,
+        settings.channelCount ? `${settings.channelCount}ch` : null,
+        settings.autoGainControl === true ? 'AGC' : null,
+    ].filter(Boolean);
+
+    if (parts.length > 0) {
+        console.info(`[听音识阶] 麦克风输入: ${parts.join(', ')}, gain=${getInputGainValue().toFixed(1)}x`);
+    }
+}
+
+function connectAudioInput() {
+    micSource = audioContext.createMediaStreamSource(micStream);
+    inputGain = audioContext.createGain();
+    inputGain.gain.value = getInputGainValue();
+    micSource.connect(inputGain);
+    inputGain.connect(analyser);
+}
+
+function disconnectAudioInput() {
+    if (inputGain) {
+        inputGain.disconnect();
+        inputGain = null;
+    }
+
+    if (micSource) {
+        micSource.disconnect();
+        micSource = null;
+    }
+}
+
+function getVolumeHint() {
+    if (recordingStats.maxRms < 0.0015) {
+        return '几乎没有输入, 请检查麦克风';
+    }
+
+    if (recordingStats.maxRms < getRmsThreshold()) {
+        return '声音偏小, 已提高灵敏度';
+    }
+
+    return '声音太小, 请靠近麦克风';
+}
+
+async function ensureAudioContextRunning() {
+    if (audioContext?.state === 'suspended') {
+        await audioContext.resume();
     }
 }
 
@@ -713,8 +868,9 @@ async function startRecording() {
         analyser.fftSize = BUFFER_SIZE;
         analyser.smoothingTimeConstant = 0;
         timeBuffer = new Float32Array(analyser.fftSize);
-        micSource = audioContext.createMediaStreamSource(micStream);
-        micSource.connect(analyser);
+        connectAudioInput();
+        await ensureAudioContextRunning();
+        describeInputTrack();
 
         recording = true;
         pendingStart = false;
@@ -745,10 +901,7 @@ function closeAudioInput() {
         animationFrameId = null;
     }
 
-    if (micSource) {
-        micSource.disconnect();
-        micSource = null;
-    }
+    disconnectAudioInput();
 
     if (micStream) {
         micStream.getTracks().forEach(track => track.stop());
@@ -862,6 +1015,7 @@ els.hold.addEventListener('keyup', (event) => {
     }
 });
 
+els.sensitivity.addEventListener('input', syncInputGain);
 els.play.addEventListener('click', playCapturedSequence);
 els.clear.addEventListener('click', clearSequence);
 els.removeLast.addEventListener('click', removeLastNote);

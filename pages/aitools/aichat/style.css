@@ -79,6 +79,8 @@ body {
     height: 40px;
     border: none;
     background: var(--card-bg);
+    color: var(--text-color);
+    text-decoration: none;
     border-radius: 10px;
     cursor: pointer;
     font-size: 1.2rem;

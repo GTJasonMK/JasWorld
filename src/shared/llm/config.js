@@ -10,6 +10,7 @@ import { storage, StorageKeys } from '@core/storage.js';
 
 export const DEFAULT_AI_CONFIG = Object.freeze({
   enabled: true,
+  provider: 'custom',
   apiUrl: '',
   apiKey: '',
   persistApiKey: false,

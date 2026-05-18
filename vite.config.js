@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 import { fileURLToPath, URL } from 'node:url';
 import { readdirSync, statSync, existsSync } from 'node:fs';
-import { resolve, relative } from 'node:path';
+import { dirname, resolve, relative } from 'node:path';
 import { execSync } from 'node:child_process';
 
 const rootDir = fileURLToPath(new URL('.', import.meta.url));
@@ -21,12 +21,18 @@ const APP_COMMIT = git('rev-parse --short HEAD', 'unknown');
 const APP_BUILD_TIME = new Date().toISOString();
 const ENABLE_SOURCEMAP = process.env.BUILD_SOURCEMAP === '1';
 const BASE_PATH = process.env.BASE_PATH || './';
+const PUBLIC_BASE_PATH = BASE_PATH === './' ? './' : (BASE_PATH.endsWith('/') ? BASE_PATH : `${BASE_PATH}/`);
 
-function publicPath(path) {
-  const base = BASE_PATH === './'
-    ? '/'
-    : BASE_PATH.endsWith('/') ? BASE_PATH : `${BASE_PATH}/`;
-  return `${base}${path.replace(/^\//, '')}`;
+function publicPath(path, htmlFilename = null) {
+  const cleanPath = path.replace(/^\//, '');
+  if (PUBLIC_BASE_PATH !== './') return `${PUBLIC_BASE_PATH}${cleanPath}`;
+
+  if (!htmlFilename) return `./${cleanPath}`;
+  const htmlDir = dirname(relative(rootDir, htmlFilename).replace(/\\/g, '/'));
+  const relativePrefix = htmlDir === '.'
+    ? '.'
+    : relative(htmlDir, '.').replace(/\\/g, '/') || '.';
+  return `${relativePrefix}/${cleanPath}`;
 }
 
 function collectHtmlEntries(baseDir) {
@@ -58,7 +64,7 @@ function collectHtmlEntries(baseDir) {
 
 export default defineConfig({
   root: rootDir,
-  base: BASE_PATH,
+  base: PUBLIC_BASE_PATH,
   publicDir: 'public',
   define: {
     __APP_VERSION__: JSON.stringify(APP_VERSION),
@@ -95,11 +101,11 @@ export default defineConfig({
   plugins: [
     {
       name: 'inject-noflash',
-      transformIndexHtml(html) {
+      transformIndexHtml(html, ctx) {
         // 移除 @vite/client,Vanilla MPA 无需 HMR
         html = html.replace(/<script[^>]*@vite\/client[^>]*><\/script>/g, '');
         // 在 CSS/JS 加载前同步读取主题,阻止页面闪白
-        const noflash = `<link rel="icon" href="${publicPath('favicon.svg')}" type="image/svg+xml">
+        const noflash = `<link rel="icon" href="${publicPath('favicon.svg', ctx?.filename)}" type="image/svg+xml">
 <style>html{background:#2c3e50}.page-loading body{opacity:0}body{background:#2c3e50;color:#ecf0f1;margin:0;min-height:100vh}.light-theme,html.light-theme{background:#f5f7fa}.light-theme body{background:#f5f7fa;color:#333}</style>
 <script>(function(){var d=document.documentElement;d.classList.add("page-loading");try{var s=JSON.parse(localStorage.getItem("app:settings"));var t=s&&s.ui&&s.ui.theme||"dark";if(t=="system")t=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";if(t=="light")d.classList.add("light-theme")}catch(e){}setTimeout(function(){d.classList.remove("page-loading")},3000)})()</script>`;
         html = html.replace(/<head>/, '<head>\n' + noflash);

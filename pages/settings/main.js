@@ -4,6 +4,8 @@
 import '@styles/index.css';
 import './style.css';
 import { bootstrapCore, settingsManager, DEFAULT_SETTINGS } from '@core/index.js';
+import { LLMClient } from '@shared/llm/client.js';
+import { aiConfigManager, DEFAULT_AI_CONFIG } from '@shared/llm/config.js';
 
 bootstrapCore();
 
@@ -34,9 +36,76 @@ function resolveThemeChoice(theme) {
     return theme || DEFAULT_SETTINGS.ui.theme;
 }
 
+const AI_PROVIDER_DEFAULTS = {
+    custom: { apiUrl: '', model: DEFAULT_AI_CONFIG.model },
+    openai: { apiUrl: 'https://api.openai.com/v1', model: DEFAULT_AI_CONFIG.model },
+    deepseek: { apiUrl: 'https://api.deepseek.com', model: 'deepseek-chat' },
+    claude: { apiUrl: 'https://api.anthropic.com/v1/messages', model: 'claude-3-sonnet-20240229' },
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     // DOM元素引用
     const $ = (id) => document.getElementById(id);
+
+    function readAIConfigFromForm() {
+        return {
+            enabled: $('ai-enabled')?.checked ?? DEFAULT_AI_CONFIG.enabled,
+            provider: $('ai-provider')?.value || DEFAULT_AI_CONFIG.provider,
+            apiUrl: $('ai-api-url')?.value.trim() || '',
+            apiKey: $('ai-api-key')?.value.trim() || '',
+            persistApiKey: $('ai-persist-api-key')?.checked ?? DEFAULT_AI_CONFIG.persistApiKey,
+            model: $('ai-model')?.value.trim() || DEFAULT_AI_CONFIG.model,
+            systemPrompt: $('ai-system-prompt')?.value.trim() || '',
+            temperature: parseFloat($('ai-temperature')?.value || DEFAULT_AI_CONFIG.temperature),
+            maxTokens: parseInt($('ai-max-tokens')?.value || DEFAULT_AI_CONFIG.maxTokens),
+        };
+    }
+
+    function validateAIConfig(config) {
+        if (!config.enabled) return { valid: false, message: 'AI功能当前已关闭' };
+        if (!config.apiKey) return { valid: false, message: '请填写 API Key' };
+        if (!config.model) return { valid: false, message: '请填写模型名称' };
+        if (!config.apiUrl && config.provider !== 'openai') {
+            return { valid: false, message: '请填写 API 地址' };
+        }
+        return { valid: true, message: '配置有效' };
+    }
+
+    function applyAIProviderPreset(provider) {
+        const preset = AI_PROVIDER_DEFAULTS[provider] || AI_PROVIDER_DEFAULTS.custom;
+        const providerSelect = $('ai-provider');
+        const previousProvider = providerSelect?.dataset.currentProvider || DEFAULT_AI_CONFIG.provider;
+        const previousPreset = AI_PROVIDER_DEFAULTS[previousProvider] || AI_PROVIDER_DEFAULTS.custom;
+        const apiUrlInput = $('ai-api-url');
+        const modelInput = $('ai-model');
+
+        if (apiUrlInput && (!apiUrlInput.value.trim() || apiUrlInput.value.trim() === previousPreset.apiUrl)) {
+            apiUrlInput.value = preset.apiUrl;
+        }
+        if (modelInput && (!modelInput.value.trim() || modelInput.value.trim() === previousPreset.model)) {
+            modelInput.value = preset.model;
+        }
+        if (providerSelect) providerSelect.dataset.currentProvider = provider;
+    }
+
+    function loadAISettings(config = aiConfigManager.getWithDefaults()) {
+        setChecked($('ai-enabled'), config.enabled, DEFAULT_AI_CONFIG.enabled);
+        setIf($('ai-provider'), config.provider, DEFAULT_AI_CONFIG.provider);
+        if ($('ai-provider')) $('ai-provider').dataset.currentProvider = config.provider || DEFAULT_AI_CONFIG.provider;
+        setIf($('ai-api-url'), config.apiUrl, DEFAULT_AI_CONFIG.apiUrl);
+        setIf($('ai-api-key'), config.apiKey, DEFAULT_AI_CONFIG.apiKey);
+        setChecked($('ai-persist-api-key'), config.persistApiKey, DEFAULT_AI_CONFIG.persistApiKey);
+        setIf($('ai-model'), config.model, DEFAULT_AI_CONFIG.model);
+        setIf($('ai-system-prompt'), config.systemPrompt, DEFAULT_AI_CONFIG.systemPrompt);
+        setIf($('ai-temperature'), config.temperature, DEFAULT_AI_CONFIG.temperature);
+        setText($('ai-temperature-value'), config.temperature, DEFAULT_AI_CONFIG.temperature);
+        setIf($('ai-max-tokens'), config.maxTokens, DEFAULT_AI_CONFIG.maxTokens);
+        setText($('ai-max-tokens-value'), config.maxTokens, DEFAULT_AI_CONFIG.maxTokens);
+    }
+
+    function resetAIToDefaults() {
+        loadAISettings({ ...DEFAULT_AI_CONFIG });
+    }
 
     // 加载设置
     function loadSettings() {
@@ -52,6 +121,8 @@ document.addEventListener('DOMContentLoaded', () => {
             setChecked($('animation-toggle'), settings.ui?.animations, DEFAULT_SETTINGS.ui.animations);
             setChecked($('high-contrast-toggle'), settings.ui?.highContrast, DEFAULT_SETTINGS.ui.highContrast);
             if (settings.ui?.highContrast) document.body.classList.add('high-contrast');
+
+            loadAISettings();
 
             setIf($('volume-slider'), settings.audio?.volume, DEFAULT_SETTINGS.audio.volume);
             setText($('volume-slider-value'), settings.audio?.volume, DEFAULT_SETTINGS.audio.volume);
@@ -136,6 +207,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setChecked($('animation-toggle'), d.ui.animations);
         setChecked($('high-contrast-toggle'), d.ui.highContrast);
         document.body.classList.toggle('high-contrast', d.ui.highContrast);
+        resetAIToDefaults();
         setIf($('volume-slider'), d.audio.volume); setText($('volume-slider-value'), d.audio.volume);
         setIf($('note-delay-slider'), d.audio.noteDelay); setText($('note-delay-slider-value'), d.audio.noteDelay);
         setIf($('answer-delay-slider'), d.audio.answerDelay); setText($('answer-delay-slider-value'), d.audio.answerDelay);
@@ -260,12 +332,13 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         settingsManager.save(settings);
+        aiConfigManager.save(readAIConfigFromForm());
 
         document.body.classList.toggle('light-theme', resolveThemeChoice(settings.ui.theme) === 'light');
         document.body.classList.toggle('high-contrast', settings.ui.highContrast);
         document.documentElement.style.fontSize = settings.ui.fontSize + 'px';
 
-        showNotification('设置已保存！请返回游戏并【重新开始】才能应用新设置。', 5000);
+        showNotification('设置已保存。部分页面需要刷新或重新进入后生效。', 5000);
     }
 
     // 绑定滑块显示更新
@@ -278,6 +351,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     bindSlider('volume-slider', 'volume-slider-value');
+    bindSlider('ai-temperature', 'ai-temperature-value');
+    bindSlider('ai-max-tokens', 'ai-max-tokens-value');
     bindSlider('note-delay-slider', 'note-delay-slider-value');
     bindSlider('answer-delay-slider', 'answer-delay-slider-value');
     bindSlider('points-per-correct', 'points-per-correct-value');
@@ -309,6 +384,86 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    $('ai-provider')?.addEventListener('change', function() {
+        applyAIProviderPreset(this.value);
+    });
+
+    async function testAIConnection() {
+        const button = $('test-ai-connection');
+        const status = $('ai-test-status');
+        const config = readAIConfigFromForm();
+        const validation = validateAIConfig(config);
+
+        if (status) {
+            status.textContent = validation.valid ? '正在测试...' : validation.message;
+            status.className = `settings-status ${validation.valid ? 'pending' : 'error'}`;
+        }
+        if (!validation.valid) return;
+
+        if (button) button.disabled = true;
+        try {
+            const reply = config.provider === 'claude'
+                ? await testClaudeConnection(config)
+                : await testOpenAICompatibleConnection(config);
+            if (status) {
+                status.textContent = `连接成功：${reply.slice(0, 40)}`;
+                status.className = 'settings-status success';
+            }
+        } catch (error) {
+            if (status) {
+                status.textContent = `连接失败：${error.message}`;
+                status.className = 'settings-status error';
+            }
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
+    async function testOpenAICompatibleConnection(config) {
+        const client = LLMClient.createFromConfig({
+            apiKey: config.apiKey,
+            baseUrl: config.apiUrl || null,
+            model: config.model,
+        });
+        const result = await client.stream([
+            { role: 'user', content: '请只回复 OK' },
+        ], {
+            timeout: 30,
+            temperature: Math.min(config.temperature, 1),
+            maxTokens: Math.min(config.maxTokens || 100, 100),
+            maxRetries: 0,
+        });
+        return result.content || 'OK';
+    }
+
+    async function testClaudeConnection(config) {
+        const response = await fetch(config.apiUrl || AI_PROVIDER_DEFAULTS.claude.apiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': config.apiKey,
+                'anthropic-version': '2023-06-01',
+                'anthropic-dangerous-direct-browser-access': 'true',
+            },
+            body: JSON.stringify({
+                model: config.model,
+                max_tokens: Math.min(config.maxTokens || 100, 100),
+                temperature: Math.min(config.temperature, 1),
+                messages: [{ role: 'user', content: '请只回复 OK' }],
+            }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error?.message || response.statusText);
+        }
+
+        const data = await response.json();
+        return data.content?.[0]?.text || 'OK';
+    }
+
+    $('test-ai-connection')?.addEventListener('click', testAIConnection);
+
     // 保存/重置按钮
     $('save-settings')?.addEventListener('click', saveSettings);
     $('reset-settings')?.addEventListener('click', () => {
@@ -327,17 +482,35 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.classList.toggle('high-contrast', this.checked);
     });
 
+    function activateSettingsTab(targetId, updateHash = false) {
+        const tab = document.querySelector(`.settings-tabs .tab-button[data-target="${targetId}"]`);
+        const target = document.getElementById(targetId);
+        if (!tab || !target) return false;
+
+        document.querySelectorAll('.settings-tabs .tab-button').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.settings-section').forEach(s => s.classList.remove('active'));
+        tab.classList.add('active');
+        target.classList.add('active');
+        if (updateHash && location.hash !== `#${targetId}`) {
+            history.replaceState(null, '', `#${targetId}`);
+        }
+        return true;
+    }
+
     // 选项卡切换
     document.querySelectorAll('.settings-tabs .tab-button').forEach(tab => {
         tab.addEventListener('click', function() {
-            document.querySelectorAll('.settings-tabs .tab-button').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.settings-section').forEach(s => s.classList.remove('active'));
-            this.classList.add('active');
-            const target = document.getElementById(this.dataset.target);
-            if (target) target.classList.add('active');
+            activateSettingsTab(this.dataset.target, true);
         });
     });
-    document.querySelector('.settings-tabs .tab-button')?.click();
+    const initialTarget = location.hash ? location.hash.slice(1) : '';
+    if (!activateSettingsTab(initialTarget)) {
+        const firstTab = document.querySelector('.settings-tabs .tab-button');
+        if (firstTab) activateSettingsTab(firstTab.dataset.target);
+    }
+    window.addEventListener('hashchange', () => {
+        if (location.hash) activateSettingsTab(location.hash.slice(1));
+    });
 
     // 游戏子选项卡
     document.querySelectorAll('.games-subtabs .subtab-button').forEach(tab => {

@@ -26,6 +26,7 @@
             <div class="settings-container module-section">
                 <div class="settings-tabs">
                     <button class="tab-button" data-target="ui-settings-tab">外观调适</button>
+                    <button class="tab-button" data-target="ai-settings-tab">AI服务</button>
                     <button class="tab-button" data-target="audio-settings-tab">声音调律</button>
                     <button class="tab-button" data-target="music-settings-tab">音乐训练</button>
                     <button class="tab-button" data-target="games-settings-tab">游戏调控</button>
@@ -79,6 +80,119 @@
                             <input type="checkbox" id="high-contrast-toggle">
                         </div>
                         <div class="setting-description">增加文本与背景间的对比度，提高可读性</div>
+                    </div>
+                </section>
+
+                <!-- AI服务 -->
+                <section class="settings-section" id="ai-settings-tab">
+                    <h2>AI服务配置</h2>
+
+                    <div class="setting-item">
+                        <div class="setting-label">
+                            <label for="ai-enabled">启用AI功能</label>
+                        </div>
+                        <div class="setting-control">
+                            <input type="checkbox" id="ai-enabled" checked>
+                        </div>
+                        <div class="setting-description">控制思绪对谈和角色对话是否调用外部AI服务</div>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-label">
+                            <label for="ai-provider">接口类型</label>
+                        </div>
+                        <div class="setting-control">
+                            <select id="ai-provider">
+                                <option value="custom">OpenAI兼容 / New API</option>
+                                <option value="openai">OpenAI</option>
+                                <option value="deepseek">DeepSeek</option>
+                                <option value="claude">Anthropic Claude</option>
+                            </select>
+                        </div>
+                        <div class="setting-description">普通AI聊天使用OpenAI兼容接口；Claude直连主要用于角色对话</div>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-label">
+                            <label for="ai-api-url">API地址</label>
+                        </div>
+                        <div class="setting-control">
+                            <input type="url" id="ai-api-url" placeholder="https://api.example.com/v1">
+                        </div>
+                        <div class="setting-description">填写base URL即可，OpenAI兼容接口会自动补全 /chat/completions</div>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-label">
+                            <label for="ai-api-key">API Key</label>
+                        </div>
+                        <div class="setting-control">
+                            <input type="password" id="ai-api-key" autocomplete="off" placeholder="sk-xxxxx">
+                            <label class="inline-setting" for="ai-persist-api-key">
+                                <input type="checkbox" id="ai-persist-api-key">
+                                长期保存在此浏览器
+                            </label>
+                        </div>
+                        <div class="setting-description">默认仅保存在当前浏览器会话；长期保存会增加本机泄露风险</div>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-label">
+                            <label for="ai-model">模型</label>
+                        </div>
+                        <div class="setting-control">
+                            <input type="text" id="ai-model" list="ai-model-options" placeholder="gpt-3.5-turbo">
+                            <datalist id="ai-model-options">
+                                <option value="gpt-3.5-turbo"></option>
+                                <option value="gpt-4"></option>
+                                <option value="gpt-4-turbo"></option>
+                                <option value="deepseek-chat"></option>
+                                <option value="deepseek-reasoner"></option>
+                                <option value="claude-3-sonnet-20240229"></option>
+                            </datalist>
+                        </div>
+                        <div class="setting-description">可以直接输入服务商支持的自定义模型名称</div>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-label">
+                            <label for="ai-system-prompt">System Prompt</label>
+                        </div>
+                        <div class="setting-control">
+                            <textarea id="ai-system-prompt" rows="4" placeholder="你是一个友好、专业的AI助手..."></textarea>
+                        </div>
+                        <div class="setting-description">普通AI聊天的默认系统提示词；角色对话会优先使用角色卡提示词</div>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-label">
+                            <label for="ai-temperature">Temperature</label>
+                        </div>
+                        <div class="setting-control">
+                            <input type="range" id="ai-temperature" min="0" max="2" step="0.1" value="0.7">
+                            <span class="range-display" id="ai-temperature-value">0.7</span>
+                        </div>
+                        <div class="setting-description">数值越低越稳定，越高越发散</div>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-label">
+                            <label for="ai-max-tokens">Max Tokens</label>
+                        </div>
+                        <div class="setting-control">
+                            <input type="range" id="ai-max-tokens" min="100" max="8000" step="100" value="2000">
+                            <span class="range-display" id="ai-max-tokens-value">2000</span>
+                        </div>
+                        <div class="setting-description">限制单次回复的最大长度</div>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-label">连接测试</div>
+                        <div class="setting-control settings-inline-actions">
+                            <button id="test-ai-connection" type="button" class="secondary-button">测试AI连接</button>
+                            <span id="ai-test-status" class="settings-status" aria-live="polite"></span>
+                        </div>
+                        <div class="setting-description">测试会使用当前表单内容，不需要先保存</div>
                     </div>
                 </section>
 

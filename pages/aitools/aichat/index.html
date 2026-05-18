@@ -16,7 +16,7 @@
                 <h1>🤖 思绪对谈</h1>
             </div>
             <div class="header-right">
-                <button class="btn-icon" id="toggleSettings" title="设置">⚙️</button>
+                <a class="btn-icon" href="../../settings/#ai-settings-tab" title="AI设置">⚙️</a>
                 <button class="btn-icon" id="clearChat" title="清空对话">🗑️</button>
             </div>
         </header>
@@ -30,7 +30,6 @@
             <div class="sidebar-header">
                 <div class="sidebar-tabs">
                     <button class="tab-btn active" data-tab="history">对话历史</button>
-                    <button class="tab-btn" data-tab="settings">设置</button>
                 </div>
                 <button class="btn-icon btn-close-sidebar" id="closeSidebar" title="关闭">✕</button>
             </div>
@@ -43,73 +42,6 @@
                     </div>
                 </div>
 
-                <!-- 设置面板 -->
-                <div class="tab-panel" id="settingsPanel">
-                    <div class="settings-body">
-                    <div class="setting-group">
-                        <label>
-                            <input type="checkbox" id="enableAI" checked>
-                            启用AI对话
-                        </label>
-                    </div>
-
-                    <div class="setting-group">
-                        <label>API地址</label>
-                        <input type="text" id="apiUrl" class="setting-input"
-                               placeholder="https://api.example.com">
-                        <small>New API base URL，会自动补全endpoint</small>
-                    </div>
-
-                    <div class="setting-group">
-                        <label>API Key</label>
-                        <input type="password" id="apiKey" class="setting-input"
-                               placeholder="sk-xxxxx">
-                        <label class="inline-setting">
-                            <input type="checkbox" id="persistApiKey">
-                            长期保存在此浏览器
-                        </label>
-                        <small>默认仅保存在本次浏览器会话。长期保存会增加本机泄露风险。</small>
-                    </div>
-
-                    <div class="setting-group">
-                        <label>模型</label>
-                        <select id="modelSelect" class="setting-input">
-                            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                            <option value="gpt-4">GPT-4</option>
-                            <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                            <option value="deepseek-chat">DeepSeek Chat</option>
-                            <option value="deepseek-reasoner">DeepSeek Reasoner</option>
-                            <option value="claude-3-sonnet-20240229">Claude 3 Sonnet</option>
-                            <option value="custom">自定义</option>
-                        </select>
-                        <input type="text" id="customModel" class="setting-input"
-                               placeholder="输入自定义模型名" style="display: none; margin-top: 10px;">
-                    </div>
-
-                    <div class="setting-group">
-                        <label>System Prompt（可选）</label>
-                        <textarea id="systemPrompt" class="setting-textarea" rows="3"
-                                  placeholder="你是一个友好、专业的AI助手..."></textarea>
-                        <small>留空使用默认提示词</small>
-                    </div>
-
-                    <div class="setting-group">
-                        <label>Temperature: <span id="tempValue">0.7</span></label>
-                        <input type="range" id="temperature" min="0" max="2" step="0.1" value="0.7" class="setting-slider">
-                        <small>0 = 精确, 2 = 创造</small>
-                    </div>
-
-                    <div class="setting-group">
-                        <label>Max Tokens: <span id="tokensValue">2000</span></label>
-                        <input type="range" id="maxTokens" min="100" max="4000" step="100" value="2000" class="setting-slider">
-                    </div>
-
-                    <div class="setting-actions">
-                        <button class="btn btn-primary" id="saveSettings">💾 保存配置</button>
-                        <button class="btn btn-secondary" id="testConnection">🔗 测试连接</button>
-                    </div>
-                </div>
-                </div>
             </div>
         </aside>
 
@@ -123,7 +55,7 @@
                         <div class="quick-tips">
                             <h4>💡 开始对话：</h4>
                             <ul>
-                                <li>点击左上角⚙️配置您的AI服务</li>
+                                <li>点击右上角设置按钮，在个人偏好中配置AI服务</li>
                                 <li>支持New API、OpenAI、DeepSeek等服务</li>
                                 <li>只需填写base URL，系统会自动补全</li>
                                 <li>对话会被妥善保存在本地</li>

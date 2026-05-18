@@ -230,9 +230,11 @@ import { settingsManager } from '../../src/core/settings.js';
             throw new Error(`音符超出钢琴采样范围: ${note}`);
         }
         
-        const baseUrl = import.meta.env.BASE_URL || "/";
-        const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-        return `${normalizedBaseUrl}audio/piano/${fileNote}.mp3`;
+        const currentPath = window.location.pathname;
+        const appRoot = currentPath.includes("/pages/")
+            ? currentPath.slice(0, currentPath.indexOf("/pages/") + 1)
+            : currentPath.replace(/[^/]*$/, "");
+        return `${window.location.origin}${appRoot}audio/piano/${fileNote}.mp3`;
     }
 
     // 加载音频文件

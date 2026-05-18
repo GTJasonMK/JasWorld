@@ -69,28 +69,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }, { passive: true });
 
-    // 绑定AI配置相关事件
-    document.querySelector('.btn-menu').addEventListener('click', () => {
-        showAIConfig();
-    });
-
-    document.getElementById('closeAIConfig').addEventListener('click', () => {
-        document.getElementById('aiConfigModal').style.display = 'none';
-    });
-
-    document.getElementById('aiProvider').addEventListener('change', (e) => {
-        document.getElementById('customApiSection').style.display =
-            e.target.value === 'custom' ? 'block' : 'none';
-    });
-
-    document.getElementById('saveAIConfig').addEventListener('click', saveAIConfig);
-    document.getElementById('testAIConnection').addEventListener('click', testAIConnection);
-
-    // 点击模态窗口外部关闭
-    document.getElementById('aiConfigModal').addEventListener('click', (e) => {
-        if (e.target.id === 'aiConfigModal') {
-            document.getElementById('aiConfigModal').style.display = 'none';
-        }
+    window.addEventListener('pageshow', () => {
+        chatTavern?.aiManager?.reloadConfig();
     });
 });
 
@@ -103,6 +83,7 @@ async function sendMessage() {
 
     isSending = true;
     sendBtn.disabled = true;
+    chatTavern?.aiManager?.reloadConfig();
 
     // 清空输入
     input.value = '';
@@ -220,88 +201,4 @@ function loadHistory() {
             addMessage(msg.role, msg.content);
         }
     });
-}
-
-// AI配置相关函数
-function showAIConfig() {
-    if (!chatTavern || !chatTavern.aiManager) {
-        alert('AIManager未初始化');
-        return;
-    }
-
-    // 加载当前配置
-    const config = chatTavern.aiManager.getConfig();
-
-    document.getElementById('aiEnabled').checked = config.enabled;
-    document.getElementById('aiProvider').value = config.provider;
-    document.getElementById('aiApiKey').value = config.apiKey;
-    document.getElementById('aiPersistApiKey').checked = !!config.persistApiKey;
-    document.getElementById('aiModel').value = config.model;
-    document.getElementById('aiApiUrl').value = config.apiUrl || '';
-    document.getElementById('aiTemperature').value = config.temperature;
-    document.getElementById('aiMaxTokens').value = config.maxTokens;
-
-    // 显示/隐藏自定义API部分
-    document.getElementById('customApiSection').style.display =
-        config.provider === 'custom' ? 'block' : 'none';
-
-    // 显示模态窗口
-    document.getElementById('aiConfigModal').style.display = 'flex';
-}
-
-function saveAIConfig() {
-    const config = {
-        enabled: document.getElementById('aiEnabled').checked,
-        provider: document.getElementById('aiProvider').value,
-        apiKey: document.getElementById('aiApiKey').value,
-        persistApiKey: document.getElementById('aiPersistApiKey')?.checked ?? false,
-        model: document.getElementById('aiModel').value || 'gpt-3.5-turbo',
-        apiUrl: document.getElementById('aiApiUrl').value,
-        temperature: parseFloat(document.getElementById('aiTemperature').value),
-        maxTokens: parseInt(document.getElementById('aiMaxTokens').value)
-    };
-
-    chatTavern.aiManager.saveConfig(config);
-    alert('AI配置已保存！');
-    document.getElementById('aiConfigModal').style.display = 'none';
-}
-
-async function testAIConnection() {
-    const button = document.getElementById('testAIConnection');
-    button.disabled = true;
-    button.textContent = '测试中...';
-
-    const originalConfig = chatTavern.aiManager.getConfig();
-
-    try {
-        // 创建测试用的临时配置
-        const testConfig = {
-            enabled: true,
-            provider: document.getElementById('aiProvider').value,
-            apiKey: document.getElementById('aiApiKey').value,
-            persistApiKey: document.getElementById('aiPersistApiKey')?.checked ?? false,
-            model: document.getElementById('aiModel').value || 'gpt-3.5-turbo',
-            apiUrl: document.getElementById('aiApiUrl').value,
-            temperature: parseFloat(document.getElementById('aiTemperature').value),
-            maxTokens: parseInt(document.getElementById('aiMaxTokens').value) || 1000
-        };
-
-        // 临时保存用于测试
-        chatTavern.aiManager.saveConfig(testConfig);
-
-        // 执行测试
-        const result = await chatTavern.aiManager.testConnection();
-
-        if (result.success) {
-            alert('连接成功: ' + result.message);
-        } else {
-            alert('连接失败: ' + result.message);
-        }
-    } catch (error) {
-        alert('测试失败: ' + error.message);
-    } finally {
-        chatTavern.aiManager.saveConfig(originalConfig);
-        button.disabled = false;
-        button.textContent = '测试连接';
-    }
 }

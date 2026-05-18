@@ -35,6 +35,12 @@ export class AIManager {
         this.llmClient = null;
     }
 
+    reloadConfig() {
+        this.config = this.loadConfig();
+        this.llmClient = null;
+        return this.config;
+    }
+
     async isAvailable() {
         return this.config.enabled && this.config.apiKey && this.config.apiKey.length > 0;
     }

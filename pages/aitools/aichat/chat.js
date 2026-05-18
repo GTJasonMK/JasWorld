@@ -31,6 +31,11 @@ class AIChatRoom {
         return aiConfigManager.getWithDefaults();
     }
 
+    refreshConfig() {
+        this.config = this.loadConfig();
+        return this.config;
+    }
+
     // 保存配置
     saveConfig(config) {
         this.config = { ...this.config, ...config };
@@ -49,30 +54,7 @@ class AIChatRoom {
 
     // 初始化UI
     initUI() {
-        // 加载配置到表单
-        document.getElementById('enableAI').checked = this.config.enabled;
-        document.getElementById('apiUrl').value = this.config.apiUrl;
-        document.getElementById('apiKey').value = this.config.apiKey;
-        const persistApiKey = document.getElementById('persistApiKey');
-        if (persistApiKey) persistApiKey.checked = !!this.config.persistApiKey;
-        document.getElementById('systemPrompt').value = this.config.systemPrompt;
-        document.getElementById('temperature').value = this.config.temperature;
-        document.getElementById('maxTokens').value = this.config.maxTokens;
-
-        // 设置模型
-        const modelSelect = document.getElementById('modelSelect');
-        const isCustomModel = !Array.from(modelSelect.options).some(opt => opt.value === this.config.model);
-        if (isCustomModel && this.config.model) {
-            modelSelect.value = 'custom';
-            document.getElementById('customModel').value = this.config.model;
-            document.getElementById('customModel').style.display = 'block';
-        } else {
-            modelSelect.value = this.config.model;
-        }
-
-        // 更新滑块显示
-        document.getElementById('tempValue').textContent = this.config.temperature;
-        document.getElementById('tokensValue').textContent = this.config.maxTokens;
+        this.refreshConfig();
     }
 
     // 绑定事件
@@ -80,11 +62,6 @@ class AIChatRoom {
         // 菜单按钮（移动端）- 打开侧边栏显示对话历史
         document.getElementById('menuButton').addEventListener('click', () => {
             this.openSidebar('history');
-        });
-
-        // 设置按钮 - 打开侧边栏并切换到设置tab
-        document.getElementById('toggleSettings').addEventListener('click', () => {
-            this.openSidebar('settings');
         });
 
         // 新对话按钮
@@ -141,35 +118,6 @@ class AIChatRoom {
             }
         });
 
-        // 保存配置
-        document.getElementById('saveSettings').addEventListener('click', () => {
-            this.saveConfigFromForm();
-        });
-
-        // 测试连接
-        document.getElementById('testConnection').addEventListener('click', () => {
-            this.testConnection();
-        });
-
-        // 模型选择
-        document.getElementById('modelSelect').addEventListener('change', (e) => {
-            const customInput = document.getElementById('customModel');
-            if (e.target.value === 'custom') {
-                customInput.style.display = 'block';
-            } else {
-                customInput.style.display = 'none';
-            }
-        });
-
-        // 滑块值显示
-        document.getElementById('temperature').addEventListener('input', (e) => {
-            document.getElementById('tempValue').textContent = e.target.value;
-        });
-
-        document.getElementById('maxTokens').addEventListener('input', (e) => {
-            document.getElementById('tokensValue').textContent = e.target.value;
-        });
-
         // 发送消息
         document.getElementById('sendButton').addEventListener('click', () => {
             this.sendMessage();
@@ -207,6 +155,10 @@ class AIChatRoom {
                 updateAutoFollowFromUserScroll();
             }
         }, { passive: true });
+
+        window.addEventListener('pageshow', () => {
+            this.refreshConfig();
+        });
     }
 
     // 侧边栏控制
@@ -378,53 +330,6 @@ class AIChatRoom {
         return div.innerHTML;
     }
 
-    // 从表单保存配置
-    saveConfigFromForm() {
-        const modelSelect = document.getElementById('modelSelect');
-        let model = modelSelect.value;
-        if (model === 'custom') {
-            model = document.getElementById('customModel').value.trim();
-        }
-
-        const config = {
-            enabled: document.getElementById('enableAI').checked,
-            apiUrl: document.getElementById('apiUrl').value.trim(),
-            apiKey: document.getElementById('apiKey').value.trim(),
-            persistApiKey: document.getElementById('persistApiKey')?.checked ?? false,
-            model: model,
-            systemPrompt: document.getElementById('systemPrompt').value.trim(),
-            temperature: parseFloat(document.getElementById('temperature').value),
-            maxTokens: parseInt(document.getElementById('maxTokens').value)
-        };
-
-        this.saveConfig(config);
-        alert('✅ 配置已妥善保存！');
-    }
-
-    // 测试连接
-    async testConnection() {
-        if (!this.config.apiKey) {
-            alert('⚠️ 请先填写API Key');
-            return;
-        }
-
-        const button = document.getElementById('testConnection');
-        button.disabled = true;
-        button.textContent = '⏳ 尝试连接中...';
-
-        try {
-            const testMessage = '你好，请简短回复';
-            const response = await this.callAPI(testMessage, []);
-
-            alert('✅ API连接顺畅！\n\n回应：' + response.substring(0, 50) + '...');
-        } catch (error) {
-            alert('❌ 连接遇到了问题：\n\n' + error.message);
-        } finally {
-            button.disabled = false;
-            button.textContent = '🔗 测试连接';
-        }
-    }
-
     // 发送消息
     async sendMessage() {
         const input = document.getElementById('messageInput');
@@ -434,8 +339,10 @@ class AIChatRoom {
             return;
         }
 
+        this.refreshConfig();
+
         if (!this.config.enabled || !this.config.apiKey) {
-            alert('⚠️ 请先配置AI服务信息');
+            alert('请先到个人偏好中的“AI服务”配置API信息');
             return;
         }
 
@@ -699,7 +606,7 @@ class AIChatRoom {
                     <div class="quick-tips">
                         <h4>💡 开始对话：</h4>
                         <ul>
-                            <li>点击右上角⚙️配置您的AI服务</li>
+                            <li>点击右上角设置按钮，在个人偏好中配置AI服务</li>
                             <li>支持New API、OpenAI、DeepSeek等服务</li>
                             <li>只需填写base URL，系统会自动补全</li>
                             <li>对话会被妥善保存在本地</li>

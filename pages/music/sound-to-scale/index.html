@@ -26,64 +26,45 @@
         </header>
 
         <main class="sound-scale-page">
-            <section class="detector-toolbar" aria-label="听音识阶控制">
-                <button id="start-listening" class="primary-action" type="button">开始监听</button>
-                <button id="stop-listening" type="button" disabled>停止</button>
-                <button id="clear-sequence" type="button">清空</button>
-                <button id="copy-sequence" type="button">复制</button>
+            <section class="voice-panel" aria-label="按住识别音高">
+                <div id="detector-status" class="status-pill" aria-live="polite">按住开始</div>
+                <button id="hold-to-record" class="hold-button" type="button" aria-label="按住聆听, 松开识别">
+                    <span class="hold-icon">🎙️</span>
+                    <span id="hold-title">按住聆听</span>
+                    <small id="hold-hint">松开后识别音符与音阶</small>
+                </button>
+                <div class="live-note" aria-live="polite">
+                    <span>听到</span>
+                    <strong id="current-note">--</strong>
+                    <span id="current-frequency">-- Hz</span>
+                </div>
                 <label class="sensitivity-control" for="sensitivity-slider">
                     <span>灵敏度</span>
                     <input id="sensitivity-slider" type="range" min="0.01" max="0.08" step="0.005" value="0.025">
                 </label>
             </section>
 
-            <section class="detector-grid">
-                <div class="detector-panel current-note-panel">
-                    <div class="panel-label">当前音高</div>
-                    <div id="current-note" class="current-note">--</div>
-                    <div id="current-frequency" class="frequency-readout">-- Hz</div>
-                    <div class="cents-meter" aria-hidden="true">
-                        <span>-50</span>
-                        <div class="cents-track">
-                            <div id="cents-needle" class="cents-needle"></div>
-                        </div>
-                        <span>+50</span>
-                    </div>
-                    <div id="cents-readout" class="secondary-readout">偏差 -- cents</div>
-                </div>
-
-                <div class="detector-panel signal-panel">
-                    <div class="panel-label">输入信号</div>
-                    <div class="signal-meter">
-                        <div id="signal-fill" class="signal-fill"></div>
-                    </div>
-                    <div class="metric-row">
-                        <span>置信度</span>
-                        <strong id="confidence-value">--</strong>
-                    </div>
-                    <div class="metric-row">
-                        <span>状态</span>
-                        <strong id="detector-status">未监听</strong>
-                    </div>
-                </div>
-            </section>
-
-            <section class="transcription-grid">
-                <div class="detector-panel sequence-panel">
-                    <div class="panel-header">
-                        <h2>音符序列</h2>
+            <section class="result-panel" aria-label="识别结果">
+                <div class="panel-header">
+                    <h2>识别结果</h2>
+                    <div class="result-actions">
                         <button id="remove-last" type="button">撤销</button>
+                        <button id="clear-sequence" type="button">清空</button>
+                        <button id="copy-sequence" type="button">复制</button>
                     </div>
-                    <div id="note-sequence" class="note-sequence empty">等待输入</div>
-                    <div class="notation-block">
+                </div>
+
+                <div id="note-sequence" class="note-sequence empty">等待输入</div>
+
+                <div class="result-grid">
+                    <div class="result-block">
+                        <span>音阶候选</span>
+                        <div id="scale-candidates" class="scale-candidates empty">等待更多音符</div>
+                    </div>
+                    <div class="result-block">
                         <span>音级</span>
                         <strong id="degree-sequence">--</strong>
                     </div>
-                </div>
-
-                <div class="detector-panel scale-panel">
-                    <h2>音阶候选</h2>
-                    <div id="scale-candidates" class="scale-candidates empty">等待更多音符</div>
                 </div>
             </section>
         </main>

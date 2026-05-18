@@ -1,6 +1,6 @@
 import '@styles/index.css';
 import './style.css';
-import { bootstrapCore } from '@core/index.js';
+import { bootstrapCore, settingsManager } from '@core/index.js';
 
 bootstrapCore();
 
@@ -18,11 +18,13 @@ const SILENCE_GAP_MS = 260;
 const MIN_SEGMENT_FRAMES = 2;
 const MIN_PITCH_CONFIDENCE = 0.45;
 const NOTE_CHANGE_CONFIRM_FRAMES = 2;
+const NOTE_PLAY_SECONDS = 1.25;
 
 const els = {
     hold: document.getElementById('hold-to-record'),
     holdTitle: document.getElementById('hold-title'),
     holdHint: document.getElementById('hold-hint'),
+    play: document.getElementById('play-sequence'),
     clear: document.getElementById('clear-sequence'),
     copy: document.getElementById('copy-sequence'),
     removeLast: document.getElementById('remove-last'),
@@ -50,6 +52,12 @@ let recordingFrames = [];
 let recordingStats = createRecordingStats();
 let lastPitchAt = 0;
 let bestScale = null;
+let playbackContext = null;
+let playbackMode = 'idle';
+let playbackRunId = 0;
+let playbackSources = [];
+let playbackTimers = [];
+const pianoBufferCache = new Map();
 
 function createRecordingStats() {
     return {
@@ -186,6 +194,210 @@ function getRmsThreshold() {
     return 0.038 - ((sensitivity - 1) / 9) * 0.034;
 }
 
+function getAudioVolume() {
+    return clamp(Number(settingsManager.get('audio', 'volume', 0.8)), 0, 1);
+}
+
+function getSequenceDelayMs() {
+    return clamp(Number(settingsManager.get('audio', 'noteDelay', 400)), 150, 1200);
+}
+
+function getAppRootPath() {
+    const currentPath = window.location.pathname;
+    if (currentPath.includes('/pages/')) {
+        return currentPath.slice(0, currentPath.indexOf('/pages/') + 1);
+    }
+
+    return currentPath.replace(/[^/]*$/, '');
+}
+
+function noteToSampleName(note) {
+    return note.replace('#', 's');
+}
+
+function getPianoSampleUrl(note) {
+    return `${window.location.origin}${getAppRootPath()}audio/piano/${noteToSampleName(note)}.mp3`;
+}
+
+async function getPlaybackContext() {
+    if (!playbackContext || playbackContext.state === 'closed') {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        playbackContext = new AudioCtx();
+    }
+
+    if (playbackContext.state === 'suspended') {
+        await playbackContext.resume();
+    }
+
+    return playbackContext;
+}
+
+async function loadPianoBuffer(note) {
+    if (pianoBufferCache.has(note)) return pianoBufferCache.get(note);
+
+    const context = await getPlaybackContext();
+    const response = await fetch(getPianoSampleUrl(note));
+    if (!response.ok) {
+        throw new Error(`钢琴采样加载失败: ${note} (${response.status})`);
+    }
+
+    const buffer = await context.decodeAudioData(await response.arrayBuffer());
+    pianoBufferCache.set(note, buffer);
+    return buffer;
+}
+
+function setPlaybackMode(mode) {
+    playbackMode = mode;
+    els.play.classList.toggle('playing', mode === 'playing');
+
+    if (mode === 'loading') {
+        els.play.textContent = '加载';
+        els.play.disabled = true;
+        return;
+    }
+
+    if (mode === 'playing') {
+        els.play.textContent = '停止';
+        els.play.disabled = false;
+        return;
+    }
+
+    els.play.textContent = '播放';
+    els.play.disabled = capturedNotes.length === 0;
+}
+
+function setNotePlaybackState(index, active) {
+    const chip = els.sequence.querySelector(`.note-chip[data-index="${index}"]`);
+    if (chip) chip.classList.toggle('playing', active);
+}
+
+function clearNotePlaybackStates() {
+    els.sequence.querySelectorAll('.note-chip.playing').forEach(chip => chip.classList.remove('playing'));
+}
+
+function stopPlayback(showStatus = false) {
+    playbackRunId += 1;
+    playbackTimers.forEach(timer => window.clearTimeout(timer));
+    playbackTimers = [];
+
+    playbackSources.forEach(source => {
+        try {
+            source.stop();
+        } catch {
+            // Source may already have ended.
+        }
+    });
+    playbackSources = [];
+    clearNotePlaybackStates();
+    setPlaybackMode('idle');
+
+    if (showStatus) setStatus('已停止播放');
+}
+
+function startPianoBuffer(buffer, note, index, when, runId) {
+    const source = playbackContext.createBufferSource();
+    const gain = playbackContext.createGain();
+    source.buffer = buffer;
+    gain.gain.value = getAudioVolume();
+    source.connect(gain);
+    gain.connect(playbackContext.destination);
+
+    const highlightDelay = Math.max(0, (when - playbackContext.currentTime) * 1000);
+    const highlightTimer = window.setTimeout(() => {
+        if (runId !== playbackRunId) return;
+        setNotePlaybackState(index, true);
+        setStatus(`播放 ${note}`);
+    }, highlightDelay);
+    playbackTimers.push(highlightTimer);
+
+    source.onended = () => {
+        playbackSources = playbackSources.filter(item => item !== source);
+        setNotePlaybackState(index, false);
+    };
+
+    source.start(when);
+    source.stop(when + Math.min(buffer.duration, NOTE_PLAY_SECONDS));
+    playbackSources.push(source);
+}
+
+async function playCapturedNote(index) {
+    const item = capturedNotes[index];
+    if (!item) return;
+
+    stopPlayback();
+    const runId = playbackRunId;
+    setPlaybackMode('loading');
+    setStatus(`加载 ${item.note}`);
+
+    try {
+        await getPlaybackContext();
+        const buffer = await loadPianoBuffer(item.note);
+        if (runId !== playbackRunId) return;
+
+        setPlaybackMode('playing');
+        startPianoBuffer(buffer, item.note, index, playbackContext.currentTime, runId);
+        const doneTimer = window.setTimeout(() => {
+            if (runId !== playbackRunId) return;
+            setPlaybackMode('idle');
+            setStatus(`已播放 ${item.note}`);
+        }, NOTE_PLAY_SECONDS * 1000 + 120);
+        playbackTimers.push(doneTimer);
+    } catch (error) {
+        console.error('[听音识阶] 播放识别音失败', error);
+        if (runId === playbackRunId) {
+            setPlaybackMode('idle');
+            setStatus('钢琴采样加载失败');
+        }
+    }
+}
+
+async function playCapturedSequence() {
+    if (playbackMode === 'playing') {
+        stopPlayback(true);
+        return;
+    }
+
+    if (capturedNotes.length === 0) {
+        setStatus('没有可播放的音');
+        return;
+    }
+
+    stopPlayback();
+    const runId = playbackRunId;
+    const notes = capturedNotes.map(item => item.note);
+    setPlaybackMode('loading');
+    setStatus('加载钢琴采样');
+
+    try {
+        await getPlaybackContext();
+        const buffers = await Promise.all(notes.map(loadPianoBuffer));
+        if (runId !== playbackRunId) return;
+
+        const delaySeconds = getSequenceDelayMs() / 1000;
+        const startAt = playbackContext.currentTime + 0.04;
+        setPlaybackMode('playing');
+
+        buffers.forEach((buffer, index) => {
+            startPianoBuffer(buffer, notes[index], index, startAt + index * delaySeconds, runId);
+        });
+
+        const totalMs = ((notes.length - 1) * delaySeconds + NOTE_PLAY_SECONDS) * 1000 + 160;
+        const doneTimer = window.setTimeout(() => {
+            if (runId !== playbackRunId) return;
+            clearNotePlaybackStates();
+            setPlaybackMode('idle');
+            setStatus('播放完成');
+        }, totalMs);
+        playbackTimers.push(doneTimer);
+    } catch (error) {
+        console.error('[听音识阶] 播放识别序列失败', error);
+        if (runId === playbackRunId) {
+            setPlaybackMode('idle');
+            setStatus('钢琴采样加载失败');
+        }
+    }
+}
+
 function buildScaleCandidate(root, type, pitchClasses) {
     const scaleClasses = type.offsets.map(offset => (root + offset) % 12);
     const scaleSet = new Set(scaleClasses);
@@ -259,12 +471,17 @@ function renderSequence() {
     } else {
         els.sequence.className = 'note-sequence';
         els.sequence.innerHTML = capturedNotes
-            .map((item, index) => `<span class="note-chip" data-index="${index}">${item.note}</span>`)
+            .map((item, index) => `
+                <button class="note-chip" type="button" data-index="${index}" aria-label="播放 ${item.note}" title="播放 ${item.note}">
+                    ${item.note}
+                </button>
+            `)
             .join('');
     }
 
     renderScaleCandidates();
     renderDegrees();
+    setPlaybackMode(playbackMode === 'playing' ? 'playing' : 'idle');
 }
 
 function summarizeSegment(segment) {
@@ -471,6 +688,7 @@ async function getMicrophoneStream() {
 
 async function startRecording() {
     if (recording || pendingStart) return;
+    stopPlayback();
 
     if (!navigator.mediaDevices?.getUserMedia) {
         setStatus('浏览器不支持麦克风');
@@ -583,6 +801,7 @@ function stopRecording(commit = true) {
 }
 
 function clearSequence() {
+    stopPlayback();
     capturedNotes = [];
     bestScale = null;
     renderSequence();
@@ -590,6 +809,7 @@ function clearSequence() {
 }
 
 function removeLastNote() {
+    stopPlayback();
     capturedNotes.pop();
     renderSequence();
 }
@@ -642,6 +862,7 @@ els.hold.addEventListener('keyup', (event) => {
     }
 });
 
+els.play.addEventListener('click', playCapturedSequence);
 els.clear.addEventListener('click', clearSequence);
 els.removeLast.addEventListener('click', removeLastNote);
 els.copy.addEventListener('click', copySequence);
@@ -651,13 +872,16 @@ els.sequence.addEventListener('click', (event) => {
     if (!chip) return;
     const index = Number(chip.dataset.index);
     if (!Number.isInteger(index)) return;
-    capturedNotes.splice(index, 1);
-    renderSequence();
+    playCapturedNote(index);
 });
 
 window.addEventListener('beforeunload', () => {
     recording = false;
     pendingStart = false;
+    stopPlayback();
+    if (playbackContext && playbackContext.state !== 'closed') {
+        playbackContext.close().catch(() => {});
+    }
     closeAudioInput();
 });
 

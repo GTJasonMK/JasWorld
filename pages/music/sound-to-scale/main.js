@@ -56,6 +56,8 @@ const els = {
 let audioContext = null;
 let analyser = null;
 let inputGain = null;
+let captureNode = null;
+let captureSink = null;
 let micSource = null;
 let micStream = null;
 let timeBuffer = null;
@@ -84,6 +86,10 @@ let recordingStartedAt = 0;
 let originalAudio = null;
 let mediaStopPromise = null;
 let resolveMediaStop = null;
+let pcmChunks = [];
+let pcmSampleCount = 0;
+let pcmSampleRate = 0;
+let captureWorkletUrl = '';
 const pianoBufferCache = new Map();
 const hannWindowCache = new Map();
 
@@ -821,6 +827,98 @@ function normalizeSamples(samples) {
     return { samples: normalized, peak, rawRms, gain };
 }
 
+function preprocessSamples(samples, sampleRate) {
+    if (samples.length === 0) return samples;
+
+    let mean = 0;
+    for (let index = 0; index < samples.length; index += 1) {
+        mean += samples[index];
+    }
+    mean /= samples.length;
+
+    const filtered = new Float32Array(samples.length);
+    const cutoff = 70;
+    const rc = 1 / (2 * Math.PI * cutoff);
+    const dt = 1 / sampleRate;
+    const alpha = rc / (rc + dt);
+    let previousInput = samples[0] - mean;
+    let previousOutput = 0;
+
+    for (let index = 0; index < samples.length; index += 1) {
+        const input = samples[index] - mean;
+        const output = alpha * (previousOutput + input - previousInput);
+        filtered[index] = output;
+        previousInput = input;
+        previousOutput = output;
+    }
+
+    const noiseWindow = Math.max(512, Math.min(filtered.length, Math.round(sampleRate * 0.25)));
+    const leadingRms = calculateRmsRange(filtered, 0, noiseWindow);
+    const gate = Math.min(0.012, leadingRms * 1.35);
+
+    if (gate <= 0.00008) return filtered;
+
+    for (let index = 0; index < filtered.length; index += 1) {
+        const value = filtered[index];
+        const magnitude = Math.abs(value);
+        if (magnitude < gate) {
+            filtered[index] = 0;
+        } else {
+            filtered[index] = Math.sign(value) * (magnitude - gate);
+        }
+    }
+
+    return filtered;
+}
+
+function resetPcmCapture() {
+    pcmChunks = [];
+    pcmSampleCount = 0;
+    pcmSampleRate = audioContext?.sampleRate || 0;
+}
+
+function appendPcmCapture(inputBuffer) {
+    if (!recording || !inputBuffer) return;
+
+    const channelCount = Math.max(1, inputBuffer.numberOfChannels);
+    const length = inputBuffer.length;
+    const chunk = new Float32Array(length);
+
+    for (let channel = 0; channel < channelCount; channel += 1) {
+        const data = inputBuffer.getChannelData(channel);
+        for (let index = 0; index < length; index += 1) {
+            chunk[index] += data[index] / channelCount;
+        }
+    }
+
+    pcmChunks.push(chunk);
+    pcmSampleCount += chunk.length;
+}
+
+function appendPcmSamples(samples) {
+    if (!recording || !samples?.length) return;
+
+    const chunk = new Float32Array(samples);
+    pcmChunks.push(chunk);
+    pcmSampleCount += chunk.length;
+}
+
+function getCapturedPcmRecording() {
+    if (pcmSampleCount === 0 || !pcmSampleRate) return null;
+
+    const samples = new Float32Array(pcmSampleCount);
+    let offset = 0;
+    pcmChunks.forEach(chunk => {
+        samples.set(chunk, offset);
+        offset += chunk.length;
+    });
+
+    return {
+        samples,
+        sampleRate: pcmSampleRate,
+    };
+}
+
 function runFft(real, imag) {
     const size = real.length;
     let reversed = 0;
@@ -948,6 +1046,20 @@ function getOfflineThresholds(features) {
     };
 }
 
+function smoothFeatureFlux(features) {
+    return features.map((frame, index) => {
+        const previous = features[index - 1]?.spectralFlux ?? frame.spectralFlux;
+        const next = features[index + 1]?.spectralFlux ?? frame.spectralFlux;
+        return (previous + frame.spectralFlux * 2 + next) / 4;
+    });
+}
+
+function getLocalFluxBaseline(smoothedFlux, index) {
+    const start = Math.max(0, index - 6);
+    const end = Math.min(smoothedFlux.length, index + 7);
+    return median(smoothedFlux.slice(start, end));
+}
+
 function getActiveRanges(features, thresholds) {
     const ranges = [];
     let current = null;
@@ -981,21 +1093,34 @@ function getActiveRanges(features, thresholds) {
 function findOfflineOnsets(features, thresholds) {
     const onsets = [];
     let lastOnset = -Number.POSITIVE_INFINITY;
+    const smoothedFlux = smoothFeatureFlux(features);
 
     for (let index = 1; index < features.length - 1; index += 1) {
         const previous = features[index - 1];
         const current = features[index];
-        const next = features[index + 1];
+        const baseline = getLocalFluxBaseline(smoothedFlux, index);
         const enoughGap = current.time - lastOnset >= OFFLINE_ONSET_MIN_GAP_MS;
         const active = current.rms >= thresholds.activeRms;
-        const localFluxPeak = current.spectralFlux >= previous.spectralFlux
-            && current.spectralFlux >= next.spectralFlux;
-        const fluxOnset = localFluxPeak && current.spectralFlux >= thresholds.flux;
+        const localFluxPeak = smoothedFlux[index] >= smoothedFlux[index - 1]
+            && smoothedFlux[index] >= smoothedFlux[index + 1];
+        const fluxOnset = localFluxPeak
+            && smoothedFlux[index] >= thresholds.flux
+            && smoothedFlux[index] >= baseline * 1.55;
         const rmsRise = current.rms - previous.rms >= thresholds.activeRms * 0.45
             && current.rms / Math.max(previous.rms, thresholds.noiseRms) >= 1.35;
 
         if (active && enoughGap && (fluxOnset || rmsRise)) {
-            onsets.push(current.startMs);
+            let onsetIndex = index;
+            while (
+                onsetIndex > 0
+                && current.time - features[onsetIndex - 1].time < 90
+                && features[onsetIndex - 1].rms > thresholds.noiseRms * 1.25
+                && features[onsetIndex - 1].rms <= features[onsetIndex].rms * 1.12
+            ) {
+                onsetIndex -= 1;
+            }
+
+            onsets.push(features[onsetIndex].startMs);
             lastOnset = current.time;
         }
     }
@@ -1085,6 +1210,160 @@ function spectralMagnitudeAtFrequency(buffer, sampleRate, frequency) {
     return Math.hypot(real, imag) / Math.max(1, weight);
 }
 
+function buildSegmentPitchBuffer(samples, sampleRate, segment, attackSkipMs = OFFLINE_ATTACK_SKIP_MS) {
+    const durationMs = segment.endMs - segment.startMs;
+    const skippedMs = Math.min(attackSkipMs, durationMs * 0.28);
+    const startSample = Math.floor(((segment.startMs + skippedMs) / 1000) * sampleRate);
+    const endSample = Math.floor((segment.endMs / 1000) * sampleRate);
+    const length = Math.max(0, endSample - startSample);
+    if (length < sampleRate * 0.06) return null;
+
+    const maxLength = Math.min(length, Math.round(sampleRate * 0.55));
+    const offset = Math.max(0, Math.floor((length - maxLength) / 2));
+    return samples.slice(startSample + offset, startSample + offset + maxLength);
+}
+
+function getMagnitudeFromSpectrum(magnitudes, sampleRate, fftSize, frequency) {
+    if (frequency <= 0 || frequency >= sampleRate / 2) return 0;
+
+    const exactBin = (frequency / sampleRate) * fftSize;
+    const centerBin = Math.round(exactBin);
+    let best = 0;
+
+    for (let bin = centerBin - 1; bin <= centerBin + 1; bin += 1) {
+        if (bin >= 0 && bin < magnitudes.length) best = Math.max(best, magnitudes[bin]);
+    }
+
+    return best;
+}
+
+function computeLinearSpectrum(buffer, sampleRate) {
+    const fftSize = nextPowerOfTwo(Math.max(2048, buffer.length));
+    const real = new Float32Array(fftSize);
+    const imag = new Float32Array(fftSize);
+    const windowValues = getHannWindow(buffer.length);
+    const maxBin = Math.floor(fftSize / 2);
+
+    for (let index = 0; index < buffer.length; index += 1) {
+        real[index] = buffer[index] * windowValues[index];
+    }
+
+    runFft(real, imag);
+
+    const magnitudes = new Float32Array(maxBin + 1);
+    let peak = 0;
+    for (let bin = 0; bin <= maxBin; bin += 1) {
+        const frequency = (bin / fftSize) * sampleRate;
+        if (frequency < MIN_FREQ || frequency > OFFLINE_SPECTRUM_MAX_FREQ) continue;
+        const magnitude = Math.hypot(real[bin], imag[bin]);
+        magnitudes[bin] = magnitude;
+        peak = Math.max(peak, magnitude);
+    }
+
+    return { magnitudes, fftSize, peak };
+}
+
+function scoreMidiCandidate(magnitudes, sampleRate, fftSize, peak, midi) {
+    const frequency = midiToFrequency(midi);
+    if (frequency < MIN_FREQ || frequency > MAX_FREQ) return 0;
+
+    let harmonicScore = 0;
+    let harmonicWeight = 0;
+    for (let harmonic = 1; harmonic <= 6; harmonic += 1) {
+        const harmonicFrequency = frequency * harmonic;
+        if (harmonicFrequency > Math.min(OFFLINE_SPECTRUM_MAX_FREQ, sampleRate / 2)) break;
+
+        const weight = 1 / Math.sqrt(harmonic);
+        harmonicScore += getMagnitudeFromSpectrum(magnitudes, sampleRate, fftSize, harmonicFrequency) * weight;
+        harmonicWeight += weight;
+    }
+
+    if (harmonicWeight <= 0 || peak <= 0) return 0;
+
+    const normalizedHarmonics = harmonicScore / harmonicWeight / peak;
+    const fundamental = getMagnitudeFromSpectrum(magnitudes, sampleRate, fftSize, frequency) / peak;
+    const subHarmonic = getMagnitudeFromSpectrum(magnitudes, sampleRate, fftSize, frequency / 2) / peak;
+    const octavePenalty = subHarmonic > fundamental * 1.25 ? 0.72 : 1;
+
+    return normalizedHarmonics * (0.55 + fundamental * 0.45) * octavePenalty;
+}
+
+function scoreHpsMidiCandidate(magnitudes, sampleRate, fftSize, peak, midi) {
+    const frequency = midiToFrequency(midi);
+    if (frequency < MIN_FREQ || frequency > MAX_FREQ || peak <= 0) return 0;
+
+    let score = 1;
+    let factors = 0;
+    for (let harmonic = 1; harmonic <= 4; harmonic += 1) {
+        const magnitude = getMagnitudeFromSpectrum(magnitudes, sampleRate, fftSize, frequency * harmonic) / peak;
+        score *= Math.max(0.015, magnitude);
+        factors += 1;
+    }
+
+    return factors > 0 ? Math.pow(score, 1 / factors) : 0;
+}
+
+function detectSpectralPitch(buffer, sampleRate, hintMidi = null) {
+    if (!buffer || buffer.length < sampleRate * 0.06) return null;
+
+    const { magnitudes, fftSize, peak } = computeLinearSpectrum(buffer, sampleRate);
+    if (peak <= 0) return null;
+
+    const candidates = [];
+    const minMidi = 21;
+    const maxMidi = 96;
+    for (let midi = minMidi; midi <= maxMidi; midi += 1) {
+        const harmonicScore = scoreMidiCandidate(magnitudes, sampleRate, fftSize, peak, midi);
+        const hpsScore = scoreHpsMidiCandidate(magnitudes, sampleRate, fftSize, peak, midi);
+        let score = harmonicScore * 0.68 + hpsScore * 0.32;
+        if (hintMidi !== null) {
+            const distance = Math.abs(midi - hintMidi);
+            if (distance <= 1) score *= 1.18;
+            else if (distance <= 2) score *= 1.06;
+        }
+        candidates.push({ midi, score });
+    }
+
+    candidates.sort((a, b) => b.score - a.score);
+    const best = candidates[0];
+    const second = candidates.find(candidate => candidate.midi !== best.midi) || { score: 0 };
+    if (!best || best.score < 0.035 || best.score < second.score * 1.08) return null;
+
+    const frequency = midiToFrequency(best.midi);
+    return {
+        note: midiToNote(best.midi),
+        midi: best.midi,
+        pitchClass: ((best.midi % 12) + 12) % 12,
+        frequency,
+        cents: 0,
+        confidence: clamp(best.score / Math.max(0.001, second.score), 0, 2) / 2,
+        score: best.score,
+    };
+}
+
+function mergePitchEstimates(yinNote, spectralNote) {
+    if (!spectralNote) return yinNote;
+    if (!yinNote) return spectralNote;
+
+    const distance = Math.abs(yinNote.midi - spectralNote.midi);
+    if (distance === 0) {
+        return {
+            ...yinNote,
+            confidence: Math.max(yinNote.confidence || 0, spectralNote.confidence || 0),
+        };
+    }
+
+    if (distance === 12 && (spectralNote.score || 0) >= 0.05) {
+        return spectralNote;
+    }
+
+    if ((spectralNote.score || 0) >= 0.09 && (spectralNote.confidence || 0) >= 0.56) {
+        return spectralNote;
+    }
+
+    return yinNote;
+}
+
 function correctOctaveFrequency(buffer, sampleRate, frequency) {
     const lowerFrequency = frequency / 2;
     if (lowerFrequency < MIN_FREQ) return frequency;
@@ -1140,7 +1419,11 @@ function analyzeOfflineSegment(samples, sampleRate, segment) {
         });
     }
 
-    return summarizeSegment(stabilizePitchFrames(frames));
+    const yinNote = summarizeSegment(stabilizePitchFrames(frames));
+    const segmentBuffer = buildSegmentPitchBuffer(samples, sampleRate, segment, OFFLINE_ATTACK_SKIP_MS);
+    const spectralNote = detectSpectralPitch(segmentBuffer, sampleRate, yinNote?.midi ?? null);
+
+    return mergePitchEstimates(yinNote, spectralNote);
 }
 
 async function decodeRecordingBlob(blob) {
@@ -1154,24 +1437,74 @@ async function decodeRecordingBlob(blob) {
     }
 }
 
-async function analyzeRecordingBlob(blob) {
-    const decoded = await decodeRecordingBlob(blob);
-    const rawSamples = audioBufferToMono(decoded);
-    const normalized = normalizeSamples(rawSamples);
-    const durationMs = (normalized.samples.length / decoded.sampleRate) * 1000;
-    const features = createOfflineFeatureFrames(normalized.samples, decoded.sampleRate);
+function analyzePcmRecording(rawSamples, sampleRate) {
+    const normalized = normalizeSamples(preprocessSamples(rawSamples, sampleRate));
+    const durationMs = (normalized.samples.length / sampleRate) * 1000;
+    const features = createOfflineFeatureFrames(normalized.samples, sampleRate);
     const segmentation = createOfflineSegments(features, durationMs);
     const notes = segmentation.segments
-        .map(segment => analyzeOfflineSegment(normalized.samples, decoded.sampleRate, segment))
+        .map(segment => {
+            const note = analyzeOfflineSegment(normalized.samples, sampleRate, segment);
+            return note
+                ? {
+                    ...note,
+                    startMs: segment.startMs,
+                    endMs: segment.endMs,
+                    segmentRms: calculateRmsRange(
+                        normalized.samples,
+                        (segment.startMs / 1000) * sampleRate,
+                        (segment.endMs / 1000) * sampleRate,
+                    ),
+                }
+                : null;
+        })
         .filter(Boolean);
 
     return {
         ...normalized,
         durationMs,
         features,
-        notes,
+        notes: dedupeRecognizedNotes(notes),
         ...segmentation,
     };
+}
+
+async function analyzeRecordingBlob(blob) {
+    const decoded = await decodeRecordingBlob(blob);
+    return analyzePcmRecording(audioBufferToMono(decoded), decoded.sampleRate);
+}
+
+function dedupeRecognizedNotes(notes) {
+    return notes.reduce((result, note) => {
+        const previous = result[result.length - 1];
+        if (!previous) {
+            result.push(note);
+            return result;
+        }
+
+        const gap = (note.startMs ?? 0) - (previous.endMs ?? 0);
+        const duration = (note.endMs ?? 0) - (note.startMs ?? 0);
+        const sameMidi = note.midi === previous.midi;
+        const shortTail = duration > 0 && duration < OFFLINE_MIN_SEGMENT_MS * 1.4;
+        const weakTail = previous.segmentRms
+            && note.segmentRms
+            && note.segmentRms < previous.segmentRms * 0.32
+            && duration < OFFLINE_MIN_SEGMENT_MS * 1.7;
+
+        if (weakTail) {
+            previous.endMs = Math.max(previous.endMs ?? 0, note.endMs ?? 0);
+            return result;
+        }
+
+        if (sameMidi && (gap < OFFLINE_ONSET_MIN_GAP_MS * 1.1 || shortTail)) {
+            previous.endMs = Math.max(previous.endMs ?? 0, note.endMs ?? 0);
+            previous.confidence = Math.max(previous.confidence || 0, note.confidence || 0);
+            return result;
+        }
+
+        result.push(note);
+        return result;
+    }, []);
 }
 
 function getOfflineFailureMessage(result) {
@@ -1477,15 +1810,91 @@ function describeInputTrack() {
     }
 }
 
-function connectAudioInput() {
+function createCaptureWorkletUrl() {
+    if (captureWorkletUrl) return captureWorkletUrl;
+
+    const source = `
+        class PcmCaptureProcessor extends AudioWorkletProcessor {
+            process(inputs) {
+                const input = inputs[0];
+                if (!input || input.length === 0 || input[0].length === 0) return true;
+                const length = input[0].length;
+                const mixed = new Float32Array(length);
+                for (let channel = 0; channel < input.length; channel += 1) {
+                    const data = input[channel];
+                    for (let index = 0; index < length; index += 1) {
+                        mixed[index] += data[index] / input.length;
+                    }
+                }
+                this.port.postMessage(mixed, [mixed.buffer]);
+                return true;
+            }
+        }
+        registerProcessor('pcm-capture-processor', PcmCaptureProcessor);
+    `;
+    captureWorkletUrl = URL.createObjectURL(new Blob([source], { type: 'application/javascript' }));
+    return captureWorkletUrl;
+}
+
+async function createAudioWorkletCaptureNode() {
+    if (!audioContext?.audioWorklet || !window.AudioWorkletNode) return null;
+
+    await audioContext.audioWorklet.addModule(createCaptureWorkletUrl());
+    const node = new AudioWorkletNode(audioContext, 'pcm-capture-processor', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [1],
+    });
+    node.port.onmessage = (event) => appendPcmSamples(event.data);
+    return node;
+}
+
+function createScriptProcessorCaptureNode() {
+    const node = audioContext.createScriptProcessor(2048, 1, 1);
+    node.onaudioprocess = (event) => {
+        appendPcmCapture(event.inputBuffer);
+    };
+    return node;
+}
+
+async function connectAudioInput() {
     micSource = audioContext.createMediaStreamSource(micStream);
     inputGain = audioContext.createGain();
     inputGain.gain.value = getInputGainValue();
+    captureSink = audioContext.createGain();
+    captureSink.gain.value = 0;
+
+    try {
+        captureNode = await createAudioWorkletCaptureNode();
+    } catch (error) {
+        console.warn('[听音识阶] AudioWorklet 捕获不可用, 使用兼容模式', error);
+        captureNode = null;
+    }
+
+    if (!captureNode) {
+        captureNode = createScriptProcessorCaptureNode();
+    }
+
     micSource.connect(inputGain);
     inputGain.connect(analyser);
+    inputGain.connect(captureNode);
+    captureNode.connect(captureSink);
+    captureSink.connect(audioContext.destination);
 }
 
 function disconnectAudioInput() {
+    if (captureNode) {
+        captureNode.disconnect();
+        if ('onaudioprocess' in captureNode) captureNode.onaudioprocess = null;
+        if (captureNode.port) captureNode.port.onmessage = null;
+        captureNode = null;
+    }
+
+    if (captureSink) {
+        captureSink.disconnect();
+        captureSink = null;
+    }
+
     if (inputGain) {
         inputGain.disconnect();
         inputGain = null;
@@ -1542,7 +1951,7 @@ async function startRecording() {
         analyser.fftSize = BUFFER_SIZE;
         analyser.smoothingTimeConstant = 0;
         timeBuffer = new Float32Array(analyser.fftSize);
-        connectAudioInput();
+        await connectAudioInput();
         await ensureAudioContextRunning();
         describeInputTrack();
 
@@ -1550,6 +1959,7 @@ async function startRecording() {
         pendingStart = false;
         recordingFrames = [];
         recordingStats = createRecordingStats();
+        resetPcmCapture();
         lastPitchAt = 0;
         lastFrameAt = 0;
         startOriginalRecording();
@@ -1592,14 +2002,23 @@ function closeAudioInput() {
     timeBuffer = null;
 }
 
-async function commitRecording(recordingBlob = null) {
+async function commitRecording(recordingBlob = null, pcmRecording = null) {
     setHoldState('processing');
     setStatus('正在识别');
 
     let recognizedNotes = [];
     let offlineResult = null;
 
-    if (recordingBlob) {
+    if (pcmRecording) {
+        try {
+            offlineResult = analyzePcmRecording(pcmRecording.samples, pcmRecording.sampleRate);
+            recognizedNotes = offlineResult.notes;
+        } catch (error) {
+            console.warn('[听音识阶] PCM 离线识别失败, 尝试录音 Blob', error);
+        }
+    }
+
+    if (recognizedNotes.length === 0 && recordingBlob) {
         try {
             offlineResult = await analyzeRecordingBlob(recordingBlob);
             recognizedNotes = offlineResult.notes;
@@ -1631,13 +2050,14 @@ async function stopRecording(commit = true) {
     if (!recording) return;
     recording = false;
     processingRecording = commit;
+    const pcmRecording = getCapturedPcmRecording();
     const stoppedRecording = stopOriginalRecording();
     closeAudioInput();
 
     try {
         if (commit) {
             const recordingBlob = await stoppedRecording;
-            await commitRecording(recordingBlob);
+            await commitRecording(recordingBlob, pcmRecording);
         }
     } catch (error) {
         console.error('[听音识阶] 识别失败', error);

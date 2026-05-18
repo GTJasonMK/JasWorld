@@ -160,7 +160,9 @@
     gap: 8px;
 }
 
-.result-actions button {
+.result-actions button,
+.recording-actions button,
+.recording-download {
     min-width: 64px;
     min-height: 44px;
     padding: 10px 14px;
@@ -170,24 +172,34 @@
     color: var(--text-color);
     cursor: pointer;
     font-weight: 700;
+    text-align: center;
+    text-decoration: none;
     transition: border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
 
 .result-actions button:hover,
-.result-actions button:focus-visible {
+.result-actions button:focus-visible,
+.recording-actions button:hover,
+.recording-actions button:focus-visible,
+.recording-download:hover,
+.recording-download:focus-visible {
     border-color: var(--primary-color);
     color: var(--header-color);
     outline: none;
     transform: translateY(-1px);
 }
 
-.result-actions button:disabled {
+.result-actions button:disabled,
+.recording-actions button:disabled,
+.recording-download.disabled {
     cursor: not-allowed;
     opacity: 0.48;
+    pointer-events: none;
     transform: none;
 }
 
-.result-actions button.playing {
+.result-actions button.playing,
+.recording-actions button.playing {
     border-color: var(--accent-color);
     color: var(--accent-color);
 }
@@ -242,6 +254,32 @@
     background: transparent;
     color: var(--accent-color);
     box-shadow: 0 0 0 4px rgba(231, 76, 60, 0.12);
+}
+
+.recording-review {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid var(--sound-border);
+    border-radius: 8px;
+    color: var(--text-color);
+}
+
+.recording-review > span {
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 700;
+    opacity: 0.78;
+}
+
+.recording-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
 }
 
 .result-grid {
@@ -309,16 +347,24 @@
         flex-direction: column;
     }
 
-    .result-actions {
+    .result-actions,
+    .recording-actions {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
         justify-content: stretch;
     }
 
-    .result-actions button {
+    .result-actions button,
+    .recording-actions button,
+    .recording-download {
         width: 100%;
         min-width: 0;
         padding-inline: 8px;
+    }
+
+    .recording-review {
+        align-items: stretch;
+        flex-direction: column;
     }
 
     .result-grid {

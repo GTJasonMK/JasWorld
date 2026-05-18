@@ -20,6 +20,16 @@ const MIN_PITCH_CONFIDENCE = 0.7;
 const YIN_THRESHOLD = 0.16;
 const YIN_FALLBACK_THRESHOLD = 0.24;
 const NOTE_CHANGE_CONFIRM_FRAMES = 3;
+const ONSET_MIN_GAP_MS = 180;
+const ONSET_RMS_RATIO = 1.65;
+const ONSET_RMS_DELTA = 0.004;
+const ONSET_MIN_CONFIDENCE = 0.72;
+const OFFLINE_FRAME_MS = 32;
+const OFFLINE_HOP_MS = 12;
+const OFFLINE_ATTACK_SKIP_MS = 35;
+const OFFLINE_MIN_SEGMENT_MS = 120;
+const OFFLINE_ONSET_MIN_GAP_MS = 130;
+const OFFLINE_SPECTRUM_MAX_FREQ = 5000;
 const NOTE_PLAY_SECONDS = 1.25;
 
 const els = {
@@ -27,6 +37,10 @@ const els = {
     holdTitle: document.getElementById('hold-title'),
     holdHint: document.getElementById('hold-hint'),
     play: document.getElementById('play-sequence'),
+    playRecording: document.getElementById('play-recording'),
+    downloadRecording: document.getElementById('download-recording'),
+    clearRecording: document.getElementById('clear-recording'),
+    recordingLabel: document.getElementById('recording-label'),
     clear: document.getElementById('clear-sequence'),
     copy: document.getElementById('copy-sequence'),
     removeLast: document.getElementById('remove-last'),
@@ -48,6 +62,7 @@ let timeBuffer = null;
 let animationFrameId = null;
 let lastFrameAt = 0;
 let recording = false;
+let processingRecording = false;
 let pendingStart = false;
 let stopAfterStart = false;
 let capturedNotes = [];
@@ -60,7 +75,17 @@ let playbackMode = 'idle';
 let playbackRunId = 0;
 let playbackSources = [];
 let playbackTimers = [];
+let mediaRecorder = null;
+let mediaChunks = [];
+let savedRecordingUrl = '';
+let savedRecordingBlob = null;
+let savedRecordingDuration = 0;
+let recordingStartedAt = 0;
+let originalAudio = null;
+let mediaStopPromise = null;
+let resolveMediaStop = null;
 const pianoBufferCache = new Map();
+const hannWindowCache = new Map();
 
 function createRecordingStats() {
     return {
@@ -310,6 +335,185 @@ function setPlaybackMode(mode) {
     els.play.disabled = capturedNotes.length === 0;
 }
 
+function formatDuration(seconds) {
+    if (!Number.isFinite(seconds) || seconds <= 0) return '0.0s';
+    return `${seconds.toFixed(1)}s`;
+}
+
+function getRecordingExtension(blob) {
+    if (blob.type.includes('mp4')) return 'm4a';
+    if (blob.type.includes('ogg')) return 'ogg';
+    if (blob.type.includes('wav')) return 'wav';
+    return 'webm';
+}
+
+function setRecordingReviewState(state) {
+    const hasRecording = !!savedRecordingBlob;
+    const isPlaying = state === 'playing';
+
+    els.playRecording.textContent = isPlaying ? '停止原音' : '原音';
+    els.playRecording.classList.toggle('playing', isPlaying);
+    els.playRecording.disabled = !hasRecording;
+    els.clearRecording.disabled = !hasRecording;
+    els.recordingLabel.textContent = hasRecording
+        ? `原音已保存 ${formatDuration(savedRecordingDuration)}`
+        : '原音未保存';
+
+    if (hasRecording) {
+        const extension = getRecordingExtension(savedRecordingBlob);
+        els.downloadRecording.href = savedRecordingUrl;
+        els.downloadRecording.download = `sound-to-scale-recording-${Date.now()}.${extension}`;
+        els.downloadRecording.classList.remove('disabled');
+        els.downloadRecording.setAttribute('aria-disabled', 'false');
+    } else {
+        els.downloadRecording.removeAttribute('href');
+        els.downloadRecording.classList.add('disabled');
+        els.downloadRecording.setAttribute('aria-disabled', 'true');
+    }
+}
+
+function revokeSavedRecording() {
+    if (savedRecordingUrl) URL.revokeObjectURL(savedRecordingUrl);
+    savedRecordingUrl = '';
+    savedRecordingBlob = null;
+    savedRecordingDuration = 0;
+}
+
+function stopOriginalPlayback() {
+    if (originalAudio) {
+        originalAudio.pause();
+        originalAudio.currentTime = 0;
+        originalAudio = null;
+    }
+
+    setRecordingReviewState('idle');
+}
+
+function clearSavedRecording() {
+    stopOriginalPlayback();
+    revokeSavedRecording();
+    setRecordingReviewState('idle');
+    setStatus('原音已清除');
+}
+
+function saveRecordingBlob(blob, duration) {
+    stopOriginalPlayback();
+    revokeSavedRecording();
+    savedRecordingBlob = blob;
+    savedRecordingDuration = duration;
+    savedRecordingUrl = URL.createObjectURL(blob);
+    setRecordingReviewState('idle');
+}
+
+function resolveStoppedRecording(blob = null) {
+    if (!resolveMediaStop) return;
+
+    resolveMediaStop(blob);
+    resolveMediaStop = null;
+    mediaStopPromise = null;
+}
+
+function getMediaRecorderOptions() {
+    const types = [
+        'audio/webm;codecs=opus',
+        'audio/ogg;codecs=opus',
+        'audio/mp4',
+    ];
+    const mimeType = types.find(type => window.MediaRecorder?.isTypeSupported?.(type));
+    return mimeType ? { mimeType } : undefined;
+}
+
+function startOriginalRecording() {
+    mediaRecorder = null;
+    mediaChunks = [];
+    recordingStartedAt = performance.now();
+    mediaStopPromise = new Promise(resolve => {
+        resolveMediaStop = resolve;
+    });
+
+    if (!window.MediaRecorder || !micStream) {
+        els.recordingLabel.textContent = '浏览器不支持保存原音';
+        resolveStoppedRecording(null);
+        return;
+    }
+
+    try {
+        mediaRecorder = new MediaRecorder(micStream, getMediaRecorderOptions());
+        mediaRecorder.addEventListener('dataavailable', (event) => {
+            if (event.data?.size > 0) mediaChunks.push(event.data);
+        });
+        mediaRecorder.addEventListener('stop', () => {
+            if (mediaChunks.length === 0) {
+                resolveStoppedRecording(null);
+                return;
+            }
+
+            const blob = new Blob(mediaChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+            saveRecordingBlob(blob, (performance.now() - recordingStartedAt) / 1000);
+            mediaChunks = [];
+            resolveStoppedRecording(blob);
+        });
+        mediaRecorder.start();
+    } catch (error) {
+        console.warn('[听音识阶] 原音保存不可用', error);
+        mediaRecorder = null;
+        els.recordingLabel.textContent = '原音保存不可用';
+        resolveStoppedRecording(null);
+    }
+}
+
+function stopOriginalRecording() {
+    const stopped = mediaStopPromise || Promise.resolve(null);
+
+    if (!mediaRecorder) {
+        resolveStoppedRecording(null);
+        return stopped;
+    }
+
+    if (mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+    } else {
+        resolveStoppedRecording(savedRecordingBlob);
+    }
+
+    return stopped;
+}
+
+function playSavedRecording() {
+    if (!savedRecordingUrl) {
+        setStatus('没有保存的原音');
+        return;
+    }
+
+    if (originalAudio) {
+        stopOriginalPlayback();
+        setStatus('已停止原音');
+        return;
+    }
+
+    stopPlayback();
+    originalAudio = new Audio(savedRecordingUrl);
+    originalAudio.volume = getAudioVolume();
+    originalAudio.addEventListener('ended', () => {
+        originalAudio = null;
+        setRecordingReviewState('idle');
+        setStatus('原音播放完成');
+    }, { once: true });
+    originalAudio.addEventListener('error', () => {
+        originalAudio = null;
+        setRecordingReviewState('idle');
+        setStatus('原音播放失败');
+    }, { once: true });
+    setRecordingReviewState('playing');
+    setStatus('播放原音');
+    originalAudio.play().catch(error => {
+        console.warn('[听音识阶] 原音播放失败', error);
+        originalAudio = null;
+        setRecordingReviewState('idle');
+        setStatus('原音播放失败');
+    });
+}
+
 function setNotePlaybackState(index, active) {
     const chip = els.sequence.querySelector(`.note-chip[data-index="${index}"]`);
     if (chip) chip.classList.toggle('playing', active);
@@ -368,6 +572,7 @@ async function playCapturedNote(index) {
     const item = capturedNotes[index];
     if (!item) return;
 
+    stopOriginalPlayback();
     stopPlayback();
     const runId = playbackRunId;
     setPlaybackMode('loading');
@@ -407,6 +612,7 @@ async function playCapturedSequence() {
     }
 
     stopPlayback();
+    stopOriginalPlayback();
     const runId = playbackRunId;
     const notes = capturedNotes.map(item => item.note);
     setPlaybackMode('loading');
@@ -537,6 +743,446 @@ function median(values) {
         : sorted[middle];
 }
 
+function percentile(values, ratio) {
+    if (values.length === 0) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    const index = clamp(Math.round((sorted.length - 1) * ratio), 0, sorted.length - 1);
+    return sorted[index];
+}
+
+function nextPowerOfTwo(value) {
+    let power = 1;
+    while (power < value) power *= 2;
+    return power;
+}
+
+function getHannWindow(size) {
+    if (hannWindowCache.has(size)) return hannWindowCache.get(size);
+
+    const windowValues = new Float32Array(size);
+    for (let index = 0; index < size; index += 1) {
+        windowValues[index] = 0.5 - 0.5 * Math.cos((2 * Math.PI * index) / Math.max(1, size - 1));
+    }
+
+    hannWindowCache.set(size, windowValues);
+    return windowValues;
+}
+
+function calculateRmsRange(samples, start, end) {
+    const safeStart = clamp(Math.floor(start), 0, samples.length);
+    const safeEnd = clamp(Math.floor(end), safeStart, samples.length);
+    const length = safeEnd - safeStart;
+    if (length <= 0) return 0;
+
+    let sumSquares = 0;
+    for (let index = safeStart; index < safeEnd; index += 1) {
+        const sample = samples[index];
+        sumSquares += sample * sample;
+    }
+
+    return Math.sqrt(sumSquares / length);
+}
+
+function getPeakAmplitude(samples) {
+    let peak = 0;
+    for (let index = 0; index < samples.length; index += 1) {
+        peak = Math.max(peak, Math.abs(samples[index]));
+    }
+    return peak;
+}
+
+function audioBufferToMono(audioBuffer) {
+    const samples = new Float32Array(audioBuffer.length);
+    const channelCount = Math.max(1, audioBuffer.numberOfChannels);
+
+    for (let channel = 0; channel < channelCount; channel += 1) {
+        const data = audioBuffer.getChannelData(channel);
+        for (let index = 0; index < samples.length; index += 1) {
+            samples[index] += data[index] / channelCount;
+        }
+    }
+
+    return samples;
+}
+
+function normalizeSamples(samples) {
+    const peak = getPeakAmplitude(samples);
+    const rawRms = calculateRmsRange(samples, 0, samples.length);
+    if (peak <= 0.000001) {
+        return { samples: new Float32Array(samples), peak, rawRms, gain: 1 };
+    }
+
+    const gain = Math.min(24, 0.9 / peak);
+    const normalized = new Float32Array(samples.length);
+    for (let index = 0; index < samples.length; index += 1) {
+        normalized[index] = clamp(samples[index] * gain, -1, 1);
+    }
+
+    return { samples: normalized, peak, rawRms, gain };
+}
+
+function runFft(real, imag) {
+    const size = real.length;
+    let reversed = 0;
+
+    for (let index = 1; index < size; index += 1) {
+        let bit = size >> 1;
+        while (reversed & bit) {
+            reversed ^= bit;
+            bit >>= 1;
+        }
+        reversed ^= bit;
+
+        if (index < reversed) {
+            const tempReal = real[index];
+            const tempImag = imag[index];
+            real[index] = real[reversed];
+            imag[index] = imag[reversed];
+            real[reversed] = tempReal;
+            imag[reversed] = tempImag;
+        }
+    }
+
+    for (let length = 2; length <= size; length *= 2) {
+        const angle = (-2 * Math.PI) / length;
+        const stepReal = Math.cos(angle);
+        const stepImag = Math.sin(angle);
+
+        for (let offset = 0; offset < size; offset += length) {
+            let unitReal = 1;
+            let unitImag = 0;
+            const half = length / 2;
+
+            for (let index = 0; index < half; index += 1) {
+                const evenIndex = offset + index;
+                const oddIndex = evenIndex + half;
+                const oddReal = real[oddIndex] * unitReal - imag[oddIndex] * unitImag;
+                const oddImag = real[oddIndex] * unitImag + imag[oddIndex] * unitReal;
+
+                real[oddIndex] = real[evenIndex] - oddReal;
+                imag[oddIndex] = imag[evenIndex] - oddImag;
+                real[evenIndex] += oddReal;
+                imag[evenIndex] += oddImag;
+
+                const nextReal = unitReal * stepReal - unitImag * stepImag;
+                unitImag = unitReal * stepImag + unitImag * stepReal;
+                unitReal = nextReal;
+            }
+        }
+    }
+}
+
+function computeSpectrumMagnitudes(samples, start, frameSize, fftSize, maxBin) {
+    const real = new Float32Array(fftSize);
+    const imag = new Float32Array(fftSize);
+    const windowValues = getHannWindow(frameSize);
+    const available = Math.max(0, Math.min(frameSize, samples.length - start));
+
+    for (let index = 0; index < available; index += 1) {
+        real[index] = samples[start + index] * windowValues[index];
+    }
+
+    runFft(real, imag);
+
+    const magnitudes = new Float32Array(maxBin + 1);
+    const scale = 1 / fftSize;
+    for (let bin = 0; bin <= maxBin; bin += 1) {
+        magnitudes[bin] = Math.log1p(Math.hypot(real[bin], imag[bin]) * scale * 120);
+    }
+
+    return magnitudes;
+}
+
+function createOfflineFeatureFrames(samples, sampleRate) {
+    const frameSize = nextPowerOfTwo(Math.max(1024, Math.round((sampleRate * OFFLINE_FRAME_MS) / 1000)));
+    const hopSize = Math.max(128, Math.round((sampleRate * OFFLINE_HOP_MS) / 1000));
+    const maxBin = Math.min(
+        Math.floor((OFFLINE_SPECTRUM_MAX_FREQ / sampleRate) * frameSize),
+        Math.floor(frameSize / 2),
+    );
+    const features = [];
+    let previousMagnitudes = null;
+
+    for (let start = 0; start < samples.length; start += hopSize) {
+        const end = Math.min(start + frameSize, samples.length);
+        const length = end - start;
+        if (features.length > 0 && length < frameSize * 0.35) break;
+
+        const magnitudes = computeSpectrumMagnitudes(samples, start, frameSize, frameSize, maxBin);
+        let spectralFlux = 0;
+        if (previousMagnitudes) {
+            for (let bin = 1; bin <= maxBin; bin += 1) {
+                spectralFlux += Math.max(0, magnitudes[bin] - previousMagnitudes[bin]);
+            }
+            spectralFlux /= Math.max(1, maxBin);
+        }
+
+        features.push({
+            startMs: (start / sampleRate) * 1000,
+            endMs: (end / sampleRate) * 1000,
+            time: ((start + length / 2) / sampleRate) * 1000,
+            rms: calculateRmsRange(samples, start, end),
+            spectralFlux,
+        });
+        previousMagnitudes = magnitudes;
+    }
+
+    return features;
+}
+
+function getOfflineThresholds(features) {
+    const rmsValues = features.map(frame => frame.rms);
+    const fluxValues = features.map(frame => frame.spectralFlux);
+    const leadingRms = features.slice(0, Math.min(12, features.length)).map(frame => frame.rms);
+    const noiseRms = Math.max(0.0001, Math.min(median(leadingRms), percentile(rmsValues, 0.35)));
+    const highRms = percentile(rmsValues, 0.9);
+    const activeRms = Math.max(0.004, noiseRms * 2.2, highRms * 0.18);
+    const fluxMedian = percentile(fluxValues, 0.5);
+    const fluxHigh = percentile(fluxValues, 0.9);
+    const flux = Math.max(0.006, fluxMedian * 2.4, fluxHigh * 0.45);
+
+    return {
+        activeRms,
+        noiseRms,
+        flux,
+    };
+}
+
+function getActiveRanges(features, thresholds) {
+    const ranges = [];
+    let current = null;
+
+    features.forEach(frame => {
+        if (frame.rms >= thresholds.activeRms) {
+            if (!current) current = { startMs: frame.startMs, endMs: frame.endMs };
+            current.endMs = frame.endMs;
+            return;
+        }
+
+        if (current) {
+            ranges.push(current);
+            current = null;
+        }
+    });
+
+    if (current) ranges.push(current);
+
+    return ranges.reduce((merged, range) => {
+        const previous = merged[merged.length - 1];
+        if (previous && range.startMs - previous.endMs <= 90) {
+            previous.endMs = range.endMs;
+        } else if (range.endMs - range.startMs >= OFFLINE_MIN_SEGMENT_MS * 0.65) {
+            merged.push({ ...range });
+        }
+        return merged;
+    }, []);
+}
+
+function findOfflineOnsets(features, thresholds) {
+    const onsets = [];
+    let lastOnset = -Number.POSITIVE_INFINITY;
+
+    for (let index = 1; index < features.length - 1; index += 1) {
+        const previous = features[index - 1];
+        const current = features[index];
+        const next = features[index + 1];
+        const enoughGap = current.time - lastOnset >= OFFLINE_ONSET_MIN_GAP_MS;
+        const active = current.rms >= thresholds.activeRms;
+        const localFluxPeak = current.spectralFlux >= previous.spectralFlux
+            && current.spectralFlux >= next.spectralFlux;
+        const fluxOnset = localFluxPeak && current.spectralFlux >= thresholds.flux;
+        const rmsRise = current.rms - previous.rms >= thresholds.activeRms * 0.45
+            && current.rms / Math.max(previous.rms, thresholds.noiseRms) >= 1.35;
+
+        if (active && enoughGap && (fluxOnset || rmsRise)) {
+            onsets.push(current.startMs);
+            lastOnset = current.time;
+        }
+    }
+
+    return onsets;
+}
+
+function createOfflineSegments(features, durationMs) {
+    if (features.length === 0) {
+        return {
+            segments: [],
+            thresholds: { activeRms: 0, noiseRms: 0, flux: 0 },
+            ranges: [],
+            onsets: [],
+        };
+    }
+
+    const thresholds = getOfflineThresholds(features);
+    const ranges = getActiveRanges(features, thresholds);
+    const onsets = findOfflineOnsets(features, thresholds);
+    const segments = [];
+
+    ranges.forEach(range => {
+        const points = [range.startMs];
+        onsets.forEach(onset => {
+            const farFromStart = onset - range.startMs > OFFLINE_ONSET_MIN_GAP_MS * 0.5;
+            const hasRoomAfter = range.endMs - onset > OFFLINE_MIN_SEGMENT_MS * 0.5;
+            const farFromPrevious = onset - points[points.length - 1] >= OFFLINE_ONSET_MIN_GAP_MS;
+            if (onset > range.startMs && onset < range.endMs && farFromStart && hasRoomAfter && farFromPrevious) {
+                points.push(onset);
+            }
+        });
+
+        points.forEach((startMs, index) => {
+            const endMs = index + 1 < points.length ? points[index + 1] : range.endMs;
+            if (endMs - startMs >= OFFLINE_MIN_SEGMENT_MS) {
+                segments.push({
+                    startMs: clamp(startMs, 0, durationMs),
+                    endMs: clamp(endMs, 0, durationMs),
+                });
+            }
+        });
+    });
+
+    return { segments, thresholds, ranges, onsets };
+}
+
+function periodicityAtFrequency(buffer, sampleRate, frequency) {
+    const lag = Math.round(sampleRate / frequency);
+    if (lag < 1 || lag >= buffer.length - 1) return 0;
+
+    let mean = 0;
+    for (let index = 0; index < buffer.length; index += 1) {
+        mean += buffer[index];
+    }
+    mean /= buffer.length;
+
+    let correlation = 0;
+    let energyA = 0;
+    let energyB = 0;
+    for (let index = 0; index < buffer.length - lag; index += 1) {
+        const current = buffer[index] - mean;
+        const delayed = buffer[index + lag] - mean;
+        correlation += current * delayed;
+        energyA += current * current;
+        energyB += delayed * delayed;
+    }
+
+    if (energyA <= 0 || energyB <= 0) return 0;
+    return correlation / Math.sqrt(energyA * energyB);
+}
+
+function spectralMagnitudeAtFrequency(buffer, sampleRate, frequency) {
+    const windowValues = getHannWindow(buffer.length);
+    let real = 0;
+    let imag = 0;
+    let weight = 0;
+
+    for (let index = 0; index < buffer.length; index += 1) {
+        const phase = (-2 * Math.PI * frequency * index) / sampleRate;
+        const sample = buffer[index] * windowValues[index];
+        real += sample * Math.cos(phase);
+        imag += sample * Math.sin(phase);
+        weight += windowValues[index];
+    }
+
+    return Math.hypot(real, imag) / Math.max(1, weight);
+}
+
+function correctOctaveFrequency(buffer, sampleRate, frequency) {
+    const lowerFrequency = frequency / 2;
+    if (lowerFrequency < MIN_FREQ) return frequency;
+
+    const midi = frequencyToMidi(frequency);
+    const currentScore = periodicityAtFrequency(buffer, sampleRate, frequency);
+    const lowerScore = periodicityAtFrequency(buffer, sampleRate, lowerFrequency);
+    const currentMagnitude = spectralMagnitudeAtFrequency(buffer, sampleRate, frequency);
+    const lowerMagnitude = spectralMagnitudeAtFrequency(buffer, sampleRate, lowerFrequency);
+    const lowerHasSpectralSupport = lowerMagnitude >= currentMagnitude * (midi >= 72 ? 0.22 : 0.32);
+    const requiredRatio = midi >= 72 ? 0.84 : 0.95;
+
+    if (lowerHasSpectralSupport && lowerScore > 0.52 && lowerScore >= currentScore * requiredRatio) {
+        return lowerFrequency;
+    }
+
+    return frequency;
+}
+
+function analyzeOfflineSegment(samples, sampleRate, segment) {
+    const durationMs = segment.endMs - segment.startMs;
+    if (durationMs < OFFLINE_MIN_SEGMENT_MS) return null;
+
+    const attackSkipMs = Math.min(OFFLINE_ATTACK_SKIP_MS, durationMs * 0.28);
+    const startSample = Math.floor(((segment.startMs + attackSkipMs) / 1000) * sampleRate);
+    const endSample = Math.floor((segment.endMs / 1000) * sampleRate);
+    const segmentRms = calculateRmsRange(samples, startSample, endSample);
+    const pitchThreshold = Math.max(0.0015, segmentRms * 0.12, getRmsThreshold() * 0.25);
+    const hopSize = Math.max(256, Math.round(sampleRate * 0.025));
+    const pitchBuffer = new Float32Array(BUFFER_SIZE);
+    const frames = [];
+
+    for (let start = startSample; start < endSample; start += hopSize) {
+        const available = Math.min(BUFFER_SIZE, endSample - start);
+        if (available < BUFFER_SIZE * 0.25 && frames.length > 0) break;
+
+        pitchBuffer.fill(0);
+        pitchBuffer.set(samples.subarray(start, Math.min(start + BUFFER_SIZE, endSample)));
+        const result = detectPitch(pitchBuffer, sampleRate, pitchThreshold);
+        if (!result.frequency) continue;
+
+        const correctedFrequency = correctOctaveFrequency(pitchBuffer, sampleRate, result.frequency);
+        const noteInfo = frequencyToNote(correctedFrequency);
+        frames.push({
+            time: (start / sampleRate) * 1000,
+            note: noteInfo.note,
+            midi: noteInfo.midi,
+            pitchClass: noteInfo.pitchClass,
+            frequency: correctedFrequency,
+            cents: noteInfo.cents,
+            confidence: result.confidence,
+            rms: result.rms,
+        });
+    }
+
+    return summarizeSegment(stabilizePitchFrames(frames));
+}
+
+async function decodeRecordingBlob(blob) {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const context = new AudioCtx();
+
+    try {
+        return await context.decodeAudioData(await blob.arrayBuffer());
+    } finally {
+        context.close().catch(() => {});
+    }
+}
+
+async function analyzeRecordingBlob(blob) {
+    const decoded = await decodeRecordingBlob(blob);
+    const rawSamples = audioBufferToMono(decoded);
+    const normalized = normalizeSamples(rawSamples);
+    const durationMs = (normalized.samples.length / decoded.sampleRate) * 1000;
+    const features = createOfflineFeatureFrames(normalized.samples, decoded.sampleRate);
+    const segmentation = createOfflineSegments(features, durationMs);
+    const notes = segmentation.segments
+        .map(segment => analyzeOfflineSegment(normalized.samples, decoded.sampleRate, segment))
+        .filter(Boolean);
+
+    return {
+        ...normalized,
+        durationMs,
+        features,
+        notes,
+        ...segmentation,
+    };
+}
+
+function getOfflineFailureMessage(result) {
+    if (!result) return '';
+    if (result.durationMs < OFFLINE_MIN_SEGMENT_MS) return '按住时间太短';
+    if (result.peak < 0.0008 || result.rawRms < 0.00025) return '几乎没有输入, 请检查麦克风';
+    if (result.ranges.length === 0) return '声音偏小, 已提高灵敏度';
+    if (result.segments.length === 0) return '没有分出稳定音段';
+    return '检测到声音, 但音高不够稳定';
+}
+
 function cloneFrameWithMidi(frame, midi) {
     const frequency = midiToFrequency(midi);
     return {
@@ -610,6 +1256,20 @@ function summarizeSegment(segment) {
     };
 }
 
+function isEnergyOnset(previousFrame, frame, currentSegment) {
+    if (!previousFrame || currentSegment.length < MIN_SEGMENT_FRAMES) return false;
+    if (frame.confidence < ONSET_MIN_CONFIDENCE) return false;
+    if (frame.time - currentSegment[0].time < ONSET_MIN_GAP_MS) return false;
+    if (frame.time - previousFrame.time > SILENCE_GAP_MS) return false;
+
+    const recentRms = currentSegment.slice(-3).map(item => item.rms);
+    const baseline = Math.max(median(recentRms), previousFrame.rms || 0, 0.0001);
+    const delta = frame.rms - baseline;
+    const ratio = frame.rms / baseline;
+
+    return delta >= ONSET_RMS_DELTA && ratio >= ONSET_RMS_RATIO;
+}
+
 function splitFramesIntoSegments(frames) {
     const segments = [];
     let currentSegment = [];
@@ -647,6 +1307,20 @@ function splitFramesIntoSegments(frames) {
         if (frame.time - previousFrame.time > SILENCE_GAP_MS) {
             closeSegment();
             startSegment(frame);
+            return;
+        }
+
+        if (isEnergyOnset(previousFrame, frame, currentSegment)) {
+            if (pendingChange.length > 0 && frame.midi === pendingChange[0].midi) {
+                segments.push(currentSegment);
+                currentSegment = [...pendingChange, frame];
+                anchorMidi = summarizeSegment(currentSegment)?.midi || currentSegment[0].midi;
+            } else {
+                segments.push([...currentSegment, ...pendingChange]);
+                startSegment(frame);
+            }
+
+            pendingChange = [];
             return;
         }
 
@@ -842,7 +1516,7 @@ async function ensureAudioContextRunning() {
 }
 
 async function startRecording() {
-    if (recording || pendingStart) return;
+    if (recording || pendingStart || processingRecording) return;
     stopPlayback();
 
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -878,6 +1552,7 @@ async function startRecording() {
         recordingStats = createRecordingStats();
         lastPitchAt = 0;
         lastFrameAt = 0;
+        startOriginalRecording();
 
         setHoldState('recording');
         setStatus('继续按住, 逐个弹奏或哼唱');
@@ -917,13 +1592,28 @@ function closeAudioInput() {
     timeBuffer = null;
 }
 
-function commitRecording() {
+async function commitRecording(recordingBlob = null) {
     setHoldState('processing');
     setStatus('正在识别');
 
-    const recognizedNotes = extractNotesFromFrames(recordingFrames);
+    let recognizedNotes = [];
+    let offlineResult = null;
+
+    if (recordingBlob) {
+        try {
+            offlineResult = await analyzeRecordingBlob(recordingBlob);
+            recognizedNotes = offlineResult.notes;
+        } catch (error) {
+            console.warn('[听音识阶] 离线识别失败, 使用实时帧回退', error);
+        }
+    }
+
     if (recognizedNotes.length === 0) {
-        setStatus(getRecordingFailureMessage());
+        recognizedNotes = extractNotesFromFrames(recordingFrames);
+    }
+
+    if (recognizedNotes.length === 0) {
+        setStatus(getOfflineFailureMessage(offlineResult) || getRecordingFailureMessage());
         return;
     }
 
@@ -932,7 +1622,7 @@ function commitRecording() {
     setStatus(`识别完成: ${recognizedNotes.length} 个音`);
 }
 
-function stopRecording(commit = true) {
+async function stopRecording(commit = true) {
     if (pendingStart) {
         stopAfterStart = commit;
         return;
@@ -940,17 +1630,26 @@ function stopRecording(commit = true) {
 
     if (!recording) return;
     recording = false;
+    processingRecording = commit;
+    const stoppedRecording = stopOriginalRecording();
     closeAudioInput();
 
-    if (commit) {
-        commitRecording();
+    try {
+        if (commit) {
+            const recordingBlob = await stoppedRecording;
+            await commitRecording(recordingBlob);
+        }
+    } catch (error) {
+        console.error('[听音识阶] 识别失败', error);
+        setStatus('识别失败');
+    } finally {
+        recordingFrames = [];
+        recordingStats = createRecordingStats();
+        lastPitchAt = 0;
+        processingRecording = false;
+        renderCurrent();
+        setHoldState('idle');
     }
-
-    recordingFrames = [];
-    recordingStats = createRecordingStats();
-    lastPitchAt = 0;
-    renderCurrent();
-    setHoldState('idle');
 }
 
 function clearSequence() {
@@ -1017,6 +1716,11 @@ els.hold.addEventListener('keyup', (event) => {
 
 els.sensitivity.addEventListener('input', syncInputGain);
 els.play.addEventListener('click', playCapturedSequence);
+els.playRecording.addEventListener('click', playSavedRecording);
+els.clearRecording.addEventListener('click', clearSavedRecording);
+els.downloadRecording.addEventListener('click', (event) => {
+    if (!savedRecordingBlob) event.preventDefault();
+});
 els.clear.addEventListener('click', clearSequence);
 els.removeLast.addEventListener('click', removeLastNote);
 els.copy.addEventListener('click', copySequence);
@@ -1032,11 +1736,15 @@ els.sequence.addEventListener('click', (event) => {
 window.addEventListener('beforeunload', () => {
     recording = false;
     pendingStart = false;
+    stopOriginalRecording();
+    stopOriginalPlayback();
     stopPlayback();
     if (playbackContext && playbackContext.state !== 'closed') {
         playbackContext.close().catch(() => {});
     }
+    revokeSavedRecording();
     closeAudioInput();
 });
 
+setRecordingReviewState('idle');
 renderSequence();

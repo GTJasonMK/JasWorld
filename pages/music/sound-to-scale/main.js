@@ -1188,6 +1188,29 @@ function getLocalFluxBaseline(smoothedFlux, index) {
     return median(smoothedFlux.slice(start, end));
 }
 
+function normalizeSeries(values) {
+    const high = percentile(values, 0.92);
+    const low = percentile(values, 0.2);
+    const span = Math.max(0.000001, high - low);
+    return values.map(value => clamp((value - low) / span, 0, 1.8));
+}
+
+function getNoveltyCurve(features) {
+    const smoothedFlux = smoothFeatureFlux(features);
+    const flux = normalizeSeries(smoothedFlux);
+    const rmsRise = features.map((frame, index) => {
+        if (index === 0) return 0;
+        return Math.max(0, frame.rms - features[index - 1].rms);
+    });
+    const rms = normalizeSeries(rmsRise);
+
+    return features.map((frame, index) => ({
+        time: frame.time,
+        startMs: frame.startMs,
+        value: flux[index] * 0.72 + rms[index] * 0.28,
+    }));
+}
+
 function getActiveRanges(features, thresholds) {
     const ranges = [];
     let current = null;
@@ -1209,7 +1232,7 @@ function getActiveRanges(features, thresholds) {
 
     return ranges.reduce((merged, range) => {
         const previous = merged[merged.length - 1];
-        if (previous && range.startMs - previous.endMs <= 90) {
+        if (previous && range.startMs - previous.endMs <= 34) {
             previous.endMs = range.endMs;
         } else if (range.endMs - range.startMs >= OFFLINE_MIN_SEGMENT_MS * 0.65) {
             merged.push({ ...range });
@@ -1222,6 +1245,7 @@ function findOfflineOnsets(features, thresholds) {
     const onsets = [];
     let lastOnset = -Number.POSITIVE_INFINITY;
     const smoothedFlux = smoothFeatureFlux(features);
+    const novelty = getNoveltyCurve(features);
 
     for (let index = 1; index < features.length - 1; index += 1) {
         const previous = features[index - 1];
@@ -1236,8 +1260,12 @@ function findOfflineOnsets(features, thresholds) {
             && smoothedFlux[index] >= baseline * 1.55;
         const rmsRise = current.rms - previous.rms >= thresholds.activeRms * 0.45
             && current.rms / Math.max(previous.rms, thresholds.noiseRms) >= 1.35;
+        const noveltyBaseline = median(novelty.slice(Math.max(0, index - 6), Math.min(novelty.length, index + 7)).map(item => item.value));
+        const noveltyPeak = novelty[index].value >= novelty[index - 1].value
+            && novelty[index].value >= novelty[index + 1].value
+            && novelty[index].value >= Math.max(0.34, noveltyBaseline * 1.45);
 
-        if (active && enoughGap && (fluxOnset || rmsRise)) {
+        if (active && enoughGap && (fluxOnset || rmsRise || noveltyPeak)) {
             let onsetIndex = index;
             while (
                 onsetIndex > 0
@@ -1254,6 +1282,55 @@ function findOfflineOnsets(features, thresholds) {
     }
 
     return onsets;
+}
+
+function findEnergyValleySplits(range, features, thresholds) {
+    const inside = features.filter(frame => frame.time > range.startMs && frame.time < range.endMs);
+    if (inside.length < 5 || range.endMs - range.startMs < OFFLINE_PITCH_SPLIT_MIN_MS * 2) return [];
+
+    const highRms = percentile(inside.map(frame => frame.rms), 0.85);
+    const splits = [];
+    let lastSplit = range.startMs;
+    const valleyThreshold = Math.max(thresholds.noiseRms * 2.2, thresholds.activeRms * 0.78, highRms * 0.38);
+    let valleyStart = -1;
+
+    function closeValley(endIndex) {
+        if (valleyStart < 0) return;
+
+        const startIndex = valleyStart;
+        const end = endIndex;
+        valleyStart = -1;
+
+        const startFrame = inside[startIndex];
+        const endFrame = inside[end];
+        const splitTime = (startFrame.time + endFrame.time) / 2;
+        const before = inside.slice(Math.max(0, startIndex - 5), startIndex);
+        const after = inside.slice(end + 1, Math.min(inside.length, end + 6));
+        const beforePeak = before.reduce((peak, frame) => Math.max(peak, frame.rms), 0);
+        const afterPeak = after.reduce((peak, frame) => Math.max(peak, frame.rms), 0);
+        const enoughBefore = splitTime - lastSplit >= OFFLINE_PITCH_SPLIT_MIN_MS * 0.78;
+        const enoughAfter = range.endMs - splitTime >= OFFLINE_PITCH_SPLIT_MIN_MS * 0.78;
+        const hasAttackAround = beforePeak >= Math.max(thresholds.activeRms * 1.1, highRms * 0.45)
+            && afterPeak >= Math.max(thresholds.activeRms * 1.1, highRms * 0.45);
+
+        if (enoughBefore && enoughAfter && hasAttackAround) {
+            splits.push(splitTime);
+            lastSplit = splitTime;
+        }
+    }
+
+    for (let index = 0; index < inside.length; index += 1) {
+        const current = inside[index];
+
+        if (current.rms <= valleyThreshold) {
+            if (valleyStart < 0) valleyStart = index;
+        } else if (valleyStart >= 0) {
+            closeValley(index - 1);
+        }
+    }
+
+    closeValley(inside.length - 1);
+    return splits;
 }
 
 function getFeatureAtTime(features, timeMs) {
@@ -1289,6 +1366,17 @@ function refineSegmentsByEnergy(segments, features, thresholds) {
     const refined = [];
 
     segments.forEach(segment => {
+        let trimmed = { ...segment };
+        const inside = features.filter(frame => frame.time >= segment.startMs && frame.time <= segment.endMs);
+        const activeInside = inside.filter(frame => frame.rms >= thresholds.activeRms * 0.75);
+        if (activeInside.length > 0) {
+            trimmed = {
+                startMs: Math.max(segment.startMs, activeInside[0].startMs),
+                endMs: Math.min(segment.endMs, activeInside[activeInside.length - 1].endMs),
+            };
+        }
+
+        segment = trimmed;
         const duration = segment.endMs - segment.startMs;
         const startFeature = getFeatureAtTime(features, segment.startMs);
         const middleFeature = getFeatureAtTime(features, (segment.startMs + segment.endMs) / 2);
@@ -1335,6 +1423,7 @@ function createOfflineSegments(features, durationMs) {
                 points.push(onset);
             }
         });
+        points.push(...findEnergyValleySplits(range, features, thresholds));
         const boundaries = normalizeBoundaryPoints([...points, range.endMs], range);
 
         boundaries.slice(0, -1).forEach((startMs, index) => {
@@ -1677,11 +1766,41 @@ function findPitchSplitPoints(samples, sampleRate, segment) {
     return splits;
 }
 
-function splitSegmentsByPitch(samples, sampleRate, segments) {
+function findReattackSplitPoints(features, segment) {
+    const inside = features.filter(frame => frame.time > segment.startMs && frame.time < segment.endMs);
+    if (inside.length < 6 || segment.endMs - segment.startMs < OFFLINE_PITCH_SPLIT_MIN_MS * 2) return [];
+
+    const highRms = percentile(inside.map(frame => frame.rms), 0.86);
+    const splits = [];
+    let lastSplit = segment.startMs;
+
+    for (let index = 2; index < inside.length - 2; index += 1) {
+        const current = inside[index];
+        const previousHigh = Math.max(inside[index - 1].rms, inside[index - 2].rms);
+        const nextHigh = Math.max(inside[index + 1].rms, inside[index + 2].rms);
+        const valley = current.rms < highRms * 0.52 && current.rms < previousHigh * 0.72 && current.rms < nextHigh * 0.72;
+        const enoughBefore = current.time - lastSplit >= OFFLINE_PITCH_SPLIT_MIN_MS;
+        const enoughAfter = segment.endMs - current.time >= OFFLINE_PITCH_SPLIT_MIN_MS;
+
+        if (valley && enoughBefore && enoughAfter) {
+            splits.push(current.time);
+            lastSplit = current.time;
+        }
+    }
+
+    return splits;
+}
+
+function splitSegmentsByPitch(samples, sampleRate, segments, features = []) {
     const refined = [];
 
     segments.forEach(segment => {
-        const splitPoints = findPitchSplitPoints(samples, sampleRate, segment);
+        const splitPoints = normalizeBoundaryPoints([
+            segment.startMs,
+            ...findPitchSplitPoints(samples, sampleRate, segment),
+            ...findReattackSplitPoints(features, segment),
+            segment.endMs,
+        ], segment).slice(1, -1);
         if (splitPoints.length === 0) {
             refined.push(segment);
             return;
@@ -1716,7 +1835,7 @@ function analyzePcmRecording(rawSamples, sampleRate) {
     const features = createOfflineFeatureFrames(normalized.samples, sampleRate);
     const segmentation = createOfflineSegments(features, durationMs);
     const segments = refineSegmentsByEnergy(
-        splitSegmentsByPitch(normalized.samples, sampleRate, segmentation.segments),
+        splitSegmentsByPitch(normalized.samples, sampleRate, segmentation.segments, features),
         features,
         segmentation.thresholds,
     );
@@ -1769,13 +1888,19 @@ function dedupeRecognizedNotes(notes) {
             && note.segmentRms
             && note.segmentRms < previous.segmentRms * 0.32
             && duration < OFFLINE_MIN_SEGMENT_MS * 1.7;
+        const tinyFragment = duration > 0 && duration < OFFLINE_MIN_SEGMENT_MS * 0.72;
+        const sameMidiTail = sameMidi
+            && previous.segmentRms
+            && note.segmentRms
+            && note.segmentRms < previous.segmentRms * 0.5
+            && shortTail;
 
         if (weakTail) {
             previous.endMs = Math.max(previous.endMs ?? 0, note.endMs ?? 0);
             return result;
         }
 
-        if (sameMidi && (gap < OFFLINE_ONSET_MIN_GAP_MS * 1.1 || shortTail)) {
+        if (sameMidi && (tinyFragment || sameMidiTail)) {
             previous.endMs = Math.max(previous.endMs ?? 0, note.endMs ?? 0);
             previous.confidence = Math.max(previous.confidence || 0, note.confidence || 0);
             return result;

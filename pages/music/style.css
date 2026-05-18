@@ -200,8 +200,8 @@ select {
 }
 
 .scale-controls .play-button {
-    min-height: 36px;
-    padding: 7px 12px;
+    min-height: 44px;
+    padding: 9px 12px;
     font-size: 13px;
 }
 
@@ -477,7 +477,17 @@ select {
 
 @media (max-width: 640px) {
     .music-options {
-        grid-template-columns: repeat(3, minmax(110px, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+        overflow-x: visible;
+    }
+
+    .music-card {
+        min-width: 0;
+        padding: 9px 6px;
+        font-size: 13px;
+        line-height: 1.2;
+        white-space: normal;
     }
 
     .music-container h3 {

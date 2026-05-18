@@ -42,9 +42,14 @@ nav ul {
     list-style: none;
     display: flex;
     gap: 20px;
+    flex-wrap: wrap;
+    align-items: center;
 }
 
 nav a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     color: var(--link-color);
     text-decoration: none;
     padding: 5px 10px;
@@ -76,17 +81,37 @@ footer a:hover {
 
 /* 响应式导航 */
 @media (max-width: 768px) {
+    .container {
+        padding: 14px;
+    }
+
     header {
         flex-direction: column;
         text-align: center;
+        gap: 12px;
     }
     
     nav {
-        margin-top: 15px;
+        width: 100%;
+        margin-top: 0;
     }
     
     nav ul {
         justify-content: center;
+        gap: 8px;
+        width: 100%;
+    }
+
+    nav a {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 10px 12px;
+        line-height: 1.2;
+        text-align: center;
+    }
+
+    header h1 {
+        overflow-wrap: anywhere;
     }
 }
 
@@ -503,7 +528,9 @@ button:active {
 
 /* 返回链接样式 */
 .back-link {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     padding: 8px 15px;
     background-color: var(--button-bg);
     color: white;
@@ -516,6 +543,40 @@ button:active {
 .back-link:hover {
     background-color: var(--button-hover);
     transform: translateY(-2px);
+}
+
+.settings-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 10px;
+    border-radius: 8px;
+    color: var(--link-color);
+    line-height: 1;
+}
+
+.settings-link:hover {
+    color: var(--link-hover);
+    background: var(--primary-color-transparent);
+}
+
+.settings-link svg {
+    flex: 0 0 auto;
+}
+
+@media (max-width: 768px) {
+    .back-link,
+    .settings-link {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .back-link {
+        padding: 10px 14px;
+        line-height: 1.2;
+    }
 }
 
 /* ========== 性能优化 ========== */

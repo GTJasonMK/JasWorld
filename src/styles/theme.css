@@ -193,6 +193,29 @@ body > .chat-container ~ .theme-toggle {
         min-width: 44px;
     }
 
+    nav a,
+    .back-link,
+    .back-btn,
+    .btn-back,
+    .settings-link,
+    .auth-help a,
+    .import-help a,
+    .guide-card a {
+        min-height: 44px;
+        min-width: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .auth-help a,
+    .import-help a,
+    .guide-card a {
+        margin: -10px -8px;
+        padding: 10px 8px;
+        vertical-align: middle;
+    }
+
     /* 链接最小点击区域（如果显示为按钮样式） */
     a.btn,
     a.button,

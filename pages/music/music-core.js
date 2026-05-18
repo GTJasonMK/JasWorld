@@ -330,40 +330,32 @@ import { settingsManager } from '../../src/core/settings.js';
         if (!statusBar) {
             statusBar = document.createElement('div');
             statusBar.id = 'audio-status-bar';
-            statusBar.style.position = 'fixed';
-            statusBar.style.bottom = '10px';
-            statusBar.style.left = '10px';
-            statusBar.style.padding = '5px 10px';
-            statusBar.style.borderRadius = '5px';
-            statusBar.style.fontSize = '14px';
-            statusBar.style.zIndex = '1000';
-            statusBar.style.opacity = '0.9';
-            statusBar.style.transition = 'opacity 0.3s';
             document.body.appendChild(statusBar);
         }
+        statusBar.style.opacity = '0.9';
         
         // 设置样式和内容
         switch(type) {
             case 'loading':
                 statusBar.style.backgroundColor = '#e9f5fe';
                 statusBar.style.color = '#0078d4';
-                statusBar.innerHTML = `⏳ ${message}`;
+                statusBar.textContent = `⏳ ${message}`;
                 break;
             case 'success':
                 statusBar.style.backgroundColor = '#e6f7e6';
                 statusBar.style.color = '#107c10';
-                statusBar.innerHTML = `✓ ${message}`;
+                statusBar.textContent = `✓ ${message}`;
                 setTimeout(() => { statusBar.style.opacity = '0'; }, 2000);
                 break;
             case 'error':
                 statusBar.style.backgroundColor = '#fde7e9';
                 statusBar.style.color = '#d13438';
-                statusBar.innerHTML = `✗ ${message}`;
+                statusBar.textContent = `✗ ${message}`;
                 break;
             default:
                 statusBar.style.backgroundColor = '#f9f9f9';
                 statusBar.style.color = '#333';
-                statusBar.innerHTML = `ℹ ${message}`;
+                statusBar.textContent = `ℹ ${message}`;
         }
         
         // 确保状态栏可见

@@ -70,8 +70,8 @@
 }
 
 .setting-control input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
+    width: 24px;
+    height: 24px;
     cursor: pointer;
 }
 
@@ -238,14 +238,18 @@
 /* 设置选项卡 */
 .settings-tabs {
     display: flex;
+    gap: 6px;
     border-bottom: 2px solid var(--box-shadow-color);
     margin-bottom: 25px;
     overflow-x: auto;
     padding-bottom: 1px;
+    scroll-padding-inline: 8px;
     white-space: nowrap;
 }
 
 .settings-tabs .tab-button {
+    flex: 0 0 auto;
+    min-height: 44px;
     padding: 10px 20px;
     background: none;
     border: none;
@@ -388,12 +392,30 @@
     }
 
     .settings-tabs {
-        justify-content: space-between;
-        padding-bottom: 5px;
+        justify-content: flex-start;
+        padding: 0 2px 6px;
     }
 
     .settings-tabs .tab-button {
         font-size: 14px;
-        padding: 8px 10px;
+        padding: 10px 12px;
+    }
+
+    .setting-control {
+        display: flex;
+        align-items: center;
+        min-height: 44px;
+    }
+
+    .setting-control input[type="range"] {
+        width: min(100%, 260px);
+        min-height: 44px;
+    }
+
+    .setting-control input[type="checkbox"] {
+        flex: 0 0 44px;
+        width: 44px;
+        height: 44px;
+        margin: 0;
     }
 }

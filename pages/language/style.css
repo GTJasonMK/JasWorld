@@ -169,7 +169,8 @@ body {
         position: static;
         justify-content: center;
         margin-bottom: 20px;
-        padding: 8px 16px;
+        min-height: 44px;
+        padding: 10px 16px;
         font-size: 0.9rem;
     }
 

@@ -29,7 +29,10 @@ const OFFLINE_HOP_MS = 12;
 const OFFLINE_ATTACK_SKIP_MS = 35;
 const OFFLINE_MIN_SEGMENT_MS = 120;
 const OFFLINE_ONSET_MIN_GAP_MS = 130;
+const OFFLINE_PITCH_SPLIT_MIN_MS = 150;
 const OFFLINE_SPECTRUM_MAX_FREQ = 5000;
+const DENOISE_FRAME_MS = 46;
+const DENOISE_NOISE_PROFILE_MS = 320;
 const NOTE_PLAY_SECONDS = 1.25;
 
 const els = {
@@ -827,7 +830,7 @@ function normalizeSamples(samples) {
     return { samples: normalized, peak, rawRms, gain };
 }
 
-function preprocessSamples(samples, sampleRate) {
+function removeDcAndHighPass(samples, sampleRate) {
     if (samples.length === 0) return samples;
 
     let mean = 0;
@@ -852,9 +855,128 @@ function preprocessSamples(samples, sampleRate) {
         previousOutput = output;
     }
 
+    return filtered;
+}
+
+function estimateNoiseProfile(samples, sampleRate, frameSize, hopSize) {
+    const candidates = [];
+    const leadingUntil = Math.min(samples.length, Math.round((sampleRate * DENOISE_NOISE_PROFILE_MS) / 1000));
+
+    for (let start = 0; start < samples.length; start += hopSize) {
+        const end = Math.min(start + frameSize, samples.length);
+        if (end - start < frameSize * 0.7) break;
+        const rms = calculateRmsRange(samples, start, end);
+        const prefer = start < leadingUntil ? -0.00001 : 0;
+        candidates.push({ start, rms: rms + prefer });
+    }
+
+    if (candidates.length === 0) return null;
+
+    candidates.sort((a, b) => a.rms - b.rms);
+    const selected = candidates.slice(0, clamp(Math.ceil(candidates.length * 0.18), 3, 12));
+    const noise = new Float32Array(frameSize / 2 + 1);
+    const real = new Float32Array(frameSize);
+    const imag = new Float32Array(frameSize);
+    const windowValues = getHannWindow(frameSize);
+
+    selected.forEach(candidate => {
+        real.fill(0);
+        imag.fill(0);
+        for (let index = 0; index < frameSize; index += 1) {
+            real[index] = (samples[candidate.start + index] || 0) * windowValues[index];
+        }
+        runFft(real, imag);
+        for (let bin = 0; bin < noise.length; bin += 1) {
+            noise[bin] += Math.hypot(real[bin], imag[bin]);
+        }
+    });
+
+    for (let bin = 0; bin < noise.length; bin += 1) {
+        noise[bin] /= selected.length;
+    }
+
+    return noise;
+}
+
+function inverseFft(real, imag) {
+    for (let index = 0; index < real.length; index += 1) {
+        imag[index] = -imag[index];
+    }
+
+    runFft(real, imag);
+
+    const scale = 1 / real.length;
+    for (let index = 0; index < real.length; index += 1) {
+        real[index] *= scale;
+        imag[index] = (-imag[index]) * scale;
+    }
+}
+
+function spectralDenoise(samples, sampleRate) {
+    if (samples.length < sampleRate * 0.18) return samples;
+
+    const frameSize = nextPowerOfTwo(Math.round((sampleRate * DENOISE_FRAME_MS) / 1000));
+    const hopSize = Math.floor(frameSize / 2);
+    const noise = estimateNoiseProfile(samples, sampleRate, frameSize, hopSize);
+    if (!noise) return samples;
+
+    const output = new Float32Array(samples.length + frameSize);
+    const weights = new Float32Array(output.length);
+    const real = new Float32Array(frameSize);
+    const imag = new Float32Array(frameSize);
+    const windowValues = getHannWindow(frameSize);
+    const floor = 0.12;
+
+    for (let start = 0; start < samples.length; start += hopSize) {
+        real.fill(0);
+        imag.fill(0);
+
+        for (let index = 0; index < frameSize; index += 1) {
+            real[index] = (samples[start + index] || 0) * windowValues[index];
+        }
+
+        runFft(real, imag);
+
+        for (let bin = 0; bin <= frameSize / 2; bin += 1) {
+            const magnitude = Math.hypot(real[bin], imag[bin]);
+            const noiseMagnitude = noise[bin] || 0;
+            const signalOverNoise = magnitude / Math.max(noiseMagnitude, 0.000001);
+            const reduction = signalOverNoise > 8
+                ? 1
+                : clamp((magnitude - noiseMagnitude * 1.55) / Math.max(magnitude, 0.000001), floor, 1);
+            real[bin] *= reduction;
+            imag[bin] *= reduction;
+
+            if (bin > 0 && bin < frameSize / 2) {
+                const mirror = frameSize - bin;
+                real[mirror] *= reduction;
+                imag[mirror] *= reduction;
+            }
+        }
+
+        inverseFft(real, imag);
+
+        for (let index = 0; index < frameSize; index += 1) {
+            const outIndex = start + index;
+            const weight = windowValues[index];
+            output[outIndex] += real[index] * weight;
+            weights[outIndex] += weight * weight;
+        }
+    }
+
+    const denoised = new Float32Array(samples.length);
+    for (let index = 0; index < denoised.length; index += 1) {
+        denoised[index] = weights[index] > 0 ? output[index] / weights[index] : samples[index];
+    }
+
+    return denoised;
+}
+
+function softNoiseGate(samples, sampleRate) {
+    const filtered = new Float32Array(samples);
     const noiseWindow = Math.max(512, Math.min(filtered.length, Math.round(sampleRate * 0.25)));
     const leadingRms = calculateRmsRange(filtered, 0, noiseWindow);
-    const gate = Math.min(0.012, leadingRms * 1.35);
+    const gate = Math.min(0.01, leadingRms * 1.1);
 
     if (gate <= 0.00008) return filtered;
 
@@ -864,11 +986,17 @@ function preprocessSamples(samples, sampleRate) {
         if (magnitude < gate) {
             filtered[index] = 0;
         } else {
-            filtered[index] = Math.sign(value) * (magnitude - gate);
+            filtered[index] = Math.sign(value) * (magnitude - gate * 0.65);
         }
     }
 
     return filtered;
+}
+
+function preprocessSamples(samples, sampleRate) {
+    const highPassed = removeDcAndHighPass(samples, sampleRate);
+    const denoised = spectralDenoise(highPassed, sampleRate);
+    return softNoiseGate(denoised, sampleRate);
 }
 
 function resetPcmCapture() {
@@ -1128,6 +1256,60 @@ function findOfflineOnsets(features, thresholds) {
     return onsets;
 }
 
+function getFeatureAtTime(features, timeMs) {
+    if (features.length === 0) return null;
+    let best = features[0];
+    let bestDistance = Math.abs(best.time - timeMs);
+
+    for (let index = 1; index < features.length; index += 1) {
+        const distance = Math.abs(features[index].time - timeMs);
+        if (distance < bestDistance) {
+            best = features[index];
+            bestDistance = distance;
+        }
+    }
+
+    return best;
+}
+
+function normalizeBoundaryPoints(points, range) {
+    return [...points]
+        .sort((a, b) => a - b)
+        .reduce((result, point) => {
+            const clamped = clamp(point, range.startMs, range.endMs);
+            const previous = result[result.length - 1];
+            if (previous === undefined || clamped - previous >= OFFLINE_ONSET_MIN_GAP_MS * 0.55) {
+                result.push(clamped);
+            }
+            return result;
+        }, []);
+}
+
+function refineSegmentsByEnergy(segments, features, thresholds) {
+    const refined = [];
+
+    segments.forEach(segment => {
+        const duration = segment.endMs - segment.startMs;
+        const startFeature = getFeatureAtTime(features, segment.startMs);
+        const middleFeature = getFeatureAtTime(features, (segment.startMs + segment.endMs) / 2);
+        const segmentRms = middleFeature?.rms || startFeature?.rms || 0;
+        const tooShort = duration < OFFLINE_MIN_SEGMENT_MS;
+        const weakTail = refined.length > 0
+            && duration < OFFLINE_MIN_SEGMENT_MS * 1.7
+            && segmentRms < thresholds.activeRms * 1.45;
+
+        if (tooShort || weakTail) {
+            const previous = refined[refined.length - 1];
+            if (previous) previous.endMs = Math.max(previous.endMs, segment.endMs);
+            return;
+        }
+
+        refined.push({ ...segment });
+    });
+
+    return refined;
+}
+
 function createOfflineSegments(features, durationMs) {
     if (features.length === 0) {
         return {
@@ -1153,9 +1335,10 @@ function createOfflineSegments(features, durationMs) {
                 points.push(onset);
             }
         });
+        const boundaries = normalizeBoundaryPoints([...points, range.endMs], range);
 
-        points.forEach((startMs, index) => {
-            const endMs = index + 1 < points.length ? points[index + 1] : range.endMs;
+        boundaries.slice(0, -1).forEach((startMs, index) => {
+            const endMs = boundaries[index + 1];
             if (endMs - startMs >= OFFLINE_MIN_SEGMENT_MS) {
                 segments.push({
                     startMs: clamp(startMs, 0, durationMs),
@@ -1165,7 +1348,7 @@ function createOfflineSegments(features, durationMs) {
         });
     });
 
-    return { segments, thresholds, ranges, onsets };
+    return { segments: refineSegmentsByEnergy(segments, features, thresholds), thresholds, ranges, onsets };
 }
 
 function periodicityAtFrequency(buffer, sampleRate, frequency) {
@@ -1426,6 +1609,96 @@ function analyzeOfflineSegment(samples, sampleRate, segment) {
     return mergePitchEstimates(yinNote, spectralNote);
 }
 
+function getSegmentPitchTrace(samples, sampleRate, segment) {
+    const startSample = Math.floor((segment.startMs / 1000) * sampleRate);
+    const endSample = Math.floor((segment.endMs / 1000) * sampleRate);
+    const segmentRms = calculateRmsRange(samples, startSample, endSample);
+    const pitchThreshold = Math.max(0.0015, segmentRms * 0.14, getRmsThreshold() * 0.25);
+    const hopSize = Math.max(256, Math.round(sampleRate * 0.035));
+    const pitchBuffer = new Float32Array(BUFFER_SIZE);
+    const trace = [];
+
+    for (let start = startSample; start < endSample; start += hopSize) {
+        const available = Math.min(BUFFER_SIZE, endSample - start);
+        if (available < BUFFER_SIZE * 0.35 && trace.length > 0) break;
+
+        pitchBuffer.fill(0);
+        pitchBuffer.set(samples.subarray(start, Math.min(start + BUFFER_SIZE, endSample)));
+        const result = detectPitch(pitchBuffer, sampleRate, pitchThreshold);
+        if (!result.frequency) continue;
+
+        const frequency = correctOctaveFrequency(pitchBuffer, sampleRate, result.frequency);
+        trace.push({
+            timeMs: (start / sampleRate) * 1000,
+            midi: frequencyToMidi(frequency),
+            confidence: result.confidence,
+            rms: result.rms,
+        });
+    }
+
+    return trace;
+}
+
+function findPitchSplitPoints(samples, sampleRate, segment) {
+    if (segment.endMs - segment.startMs < OFFLINE_PITCH_SPLIT_MIN_MS * 2) return [];
+
+    const trace = getSegmentPitchTrace(samples, sampleRate, segment)
+        .filter(item => item.confidence >= MIN_PITCH_CONFIDENCE);
+    if (trace.length < 5) return [];
+
+    const splits = [];
+    let anchorMidi = trace[0].midi;
+    let pending = [];
+
+    for (let index = 1; index < trace.length; index += 1) {
+        const item = trace[index];
+
+        if (Math.abs(item.midi - anchorMidi) <= 0) {
+            pending = [];
+            continue;
+        }
+
+        if (pending.length > 0 && item.midi !== pending[0].midi) {
+            pending = [];
+        }
+
+        pending.push(item);
+        const pendingDuration = pending[pending.length - 1].timeMs - pending[0].timeMs;
+        const enoughBefore = pending[0].timeMs - segment.startMs >= OFFLINE_PITCH_SPLIT_MIN_MS;
+        const enoughAfter = segment.endMs - pending[0].timeMs >= OFFLINE_PITCH_SPLIT_MIN_MS;
+
+        if (pending.length >= 3 && pendingDuration >= 70 && enoughBefore && enoughAfter) {
+            splits.push(pending[0].timeMs);
+            anchorMidi = pending[0].midi;
+            pending = [];
+        }
+    }
+
+    return splits;
+}
+
+function splitSegmentsByPitch(samples, sampleRate, segments) {
+    const refined = [];
+
+    segments.forEach(segment => {
+        const splitPoints = findPitchSplitPoints(samples, sampleRate, segment);
+        if (splitPoints.length === 0) {
+            refined.push(segment);
+            return;
+        }
+
+        const boundaries = [segment.startMs, ...splitPoints, segment.endMs];
+        boundaries.slice(0, -1).forEach((startMs, index) => {
+            const endMs = boundaries[index + 1];
+            if (endMs - startMs >= OFFLINE_MIN_SEGMENT_MS) {
+                refined.push({ startMs, endMs });
+            }
+        });
+    });
+
+    return refined;
+}
+
 async function decodeRecordingBlob(blob) {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     const context = new AudioCtx();
@@ -1442,7 +1715,12 @@ function analyzePcmRecording(rawSamples, sampleRate) {
     const durationMs = (normalized.samples.length / sampleRate) * 1000;
     const features = createOfflineFeatureFrames(normalized.samples, sampleRate);
     const segmentation = createOfflineSegments(features, durationMs);
-    const notes = segmentation.segments
+    const segments = refineSegmentsByEnergy(
+        splitSegmentsByPitch(normalized.samples, sampleRate, segmentation.segments),
+        features,
+        segmentation.thresholds,
+    );
+    const notes = segments
         .map(segment => {
             const note = analyzeOfflineSegment(normalized.samples, sampleRate, segment);
             return note
@@ -1466,6 +1744,7 @@ function analyzePcmRecording(rawSamples, sampleRate) {
         features,
         notes: dedupeRecognizedNotes(notes),
         ...segmentation,
+        segments,
     };
 }
 

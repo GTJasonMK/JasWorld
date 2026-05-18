@@ -10,12 +10,14 @@ const SCALE_TYPES = [
     { label: '小调', offsets: [0, 2, 3, 5, 7, 8, 10], degrees: ['1', '2', 'b3', '4', '5', 'b6', 'b7'] },
 ];
 
-const MIN_FREQ = 55;
-const MAX_FREQ = 1760;
+const MIN_FREQ = 27.5;
+const MAX_FREQ = 4200;
 const BUFFER_SIZE = 4096;
 const FRAME_INTERVAL = 70;
-const STABLE_MS = 160;
-const SILENCE_RESET_MS = 240;
+const SILENCE_GAP_MS = 260;
+const MIN_SEGMENT_FRAMES = 2;
+const MIN_PITCH_CONFIDENCE = 0.45;
+const NOTE_CHANGE_CONFIRM_FRAMES = 2;
 
 const els = {
     hold: document.getElementById('hold-to-record'),
@@ -44,13 +46,20 @@ let recording = false;
 let pendingStart = false;
 let stopAfterStart = false;
 let capturedNotes = [];
-let recordingNotes = [];
-let currentCandidate = null;
-let candidateStartedAt = 0;
-let lastRecordedNote = null;
-let hasSilenceSinceNote = true;
-let silenceStartedAt = 0;
+let recordingFrames = [];
+let recordingStats = createRecordingStats();
+let lastPitchAt = 0;
 let bestScale = null;
+
+function createRecordingStats() {
+    return {
+        totalFrames: 0,
+        loudFrames: 0,
+        pitchedFrames: 0,
+        maxRms: 0,
+        maxConfidence: 0,
+    };
+}
 
 function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
@@ -89,7 +98,7 @@ function detectPitch(buffer, sampleRate, threshold) {
     }
 
     const rms = Math.sqrt(sumSquares / buffer.length);
-    if (rms < threshold) return { frequency: null, confidence: 0, rms };
+    if (rms < threshold) return { frequency: null, confidence: 0, rms, reason: 'quiet' };
 
     const minLag = Math.floor(sampleRate / MAX_FREQ);
     const maxLag = Math.min(Math.floor(sampleRate / MIN_FREQ), buffer.length - 1);
@@ -119,8 +128,8 @@ function detectPitch(buffer, sampleRate, threshold) {
         }
     }
 
-    if (bestLag < 0 || bestCorrelation < 0.72) {
-        return { frequency: null, confidence: bestCorrelation, rms };
+    if (bestLag < 0 || bestCorrelation < MIN_PITCH_CONFIDENCE) {
+        return { frequency: null, confidence: bestCorrelation, rms, reason: 'unclear' };
     }
 
     const prev = correlations[bestLag - 1] || bestCorrelation;
@@ -133,6 +142,7 @@ function detectPitch(buffer, sampleRate, threshold) {
         frequency: sampleRate / refinedLag,
         confidence: bestCorrelation,
         rms,
+        reason: 'pitched',
     };
 }
 
@@ -169,6 +179,11 @@ function renderCurrent(noteInfo = null) {
 
     els.currentNote.textContent = noteInfo.note;
     els.currentFrequency.textContent = `${noteInfo.frequency.toFixed(1)} Hz`;
+}
+
+function getRmsThreshold() {
+    const sensitivity = clamp(Number(els.sensitivity.value || 8), 1, 10);
+    return 0.038 - ((sensitivity - 1) / 9) * 0.034;
 }
 
 function buildScaleCandidate(root, type, pitchClasses) {
@@ -252,46 +267,176 @@ function renderSequence() {
     renderDegrees();
 }
 
-function recordStableNote(noteInfo) {
-    recordingNotes.push({
+function summarizeSegment(segment) {
+    if (segment.length < MIN_SEGMENT_FRAMES) return null;
+
+    const midiWeights = new Map();
+    const midiFrames = new Map();
+    let totalWeight = 0;
+
+    segment.forEach(frame => {
+        const weight = Math.max(0.1, frame.confidence) * clamp(frame.rms / 0.035, 0.4, 1.6);
+        totalWeight += weight;
+        midiWeights.set(frame.midi, (midiWeights.get(frame.midi) || 0) + weight);
+        if (!midiFrames.has(frame.midi)) midiFrames.set(frame.midi, []);
+        midiFrames.get(frame.midi).push(frame);
+    });
+
+    let bestMidi = null;
+    let bestWeight = 0;
+    midiWeights.forEach((weight, midi) => {
+        if (weight > bestWeight) {
+            bestMidi = midi;
+            bestWeight = weight;
+        }
+    });
+
+    if (bestMidi === null || bestWeight / totalWeight < 0.32) return null;
+
+    const frames = midiFrames.get(bestMidi);
+    const averageFrequency = frames.reduce((sum, frame) => sum + frame.frequency, 0) / frames.length;
+    const averageCents = frames.reduce((sum, frame) => sum + frame.cents, 0) / frames.length;
+
+    return {
+        note: midiToNote(bestMidi),
+        midi: bestMidi,
+        pitchClass: ((bestMidi % 12) + 12) % 12,
+        frequency: averageFrequency,
+        cents: averageCents,
+    };
+}
+
+function splitFramesIntoSegments(frames) {
+    const segments = [];
+    let currentSegment = [];
+    let anchorMidi = null;
+    let pendingChange = [];
+
+    function startSegment(frame) {
+        currentSegment = [frame];
+        anchorMidi = frame.midi;
+        pendingChange = [];
+    }
+
+    function closeSegment() {
+        if (pendingChange.length >= MIN_SEGMENT_FRAMES && currentSegment.length >= MIN_SEGMENT_FRAMES) {
+            segments.push(currentSegment);
+            currentSegment = pendingChange;
+            anchorMidi = summarizeSegment(currentSegment)?.midi || currentSegment[0].midi;
+        } else {
+            currentSegment.push(...pendingChange);
+        }
+
+        pendingChange = [];
+        if (currentSegment.length > 0) segments.push(currentSegment);
+        currentSegment = [];
+        anchorMidi = null;
+    }
+
+    frames.forEach(frame => {
+        if (currentSegment.length === 0) {
+            startSegment(frame);
+            return;
+        }
+
+        const previousFrame = pendingChange[pendingChange.length - 1] || currentSegment[currentSegment.length - 1];
+        if (frame.time - previousFrame.time > SILENCE_GAP_MS) {
+            closeSegment();
+            startSegment(frame);
+            return;
+        }
+
+        if (Math.abs(frame.midi - anchorMidi) === 0) {
+            currentSegment.push(...pendingChange, frame);
+            pendingChange = [];
+            return;
+        }
+
+        if (pendingChange.length > 0 && frame.midi !== pendingChange[0].midi) {
+            currentSegment.push(...pendingChange);
+            pendingChange = [];
+        }
+
+        pendingChange.push(frame);
+        if (pendingChange.length >= NOTE_CHANGE_CONFIRM_FRAMES) {
+            segments.push(currentSegment);
+            currentSegment = pendingChange;
+            anchorMidi = summarizeSegment(currentSegment)?.midi || currentSegment[0].midi;
+            pendingChange = [];
+        }
+    });
+
+    if (currentSegment.length > 0) closeSegment();
+    return segments;
+}
+
+function extractNotesFromFrames(frames) {
+    if (frames.length < MIN_SEGMENT_FRAMES) return [];
+
+    return splitFramesIntoSegments(frames)
+        .map(summarizeSegment)
+        .filter(Boolean);
+}
+
+function getRecordingFailureMessage() {
+    if (recordingStats.totalFrames < MIN_SEGMENT_FRAMES) {
+        return '按住时间太短';
+    }
+
+    if (recordingStats.maxRms < getRmsThreshold()) {
+        return '声音太小, 请靠近麦克风';
+    }
+
+    if (recordingStats.loudFrames > 0 && recordingStats.maxConfidence < MIN_PITCH_CONFIDENCE) {
+        return '音高不够清晰, 请录单音';
+    }
+
+    if (recordingStats.pitchedFrames < MIN_SEGMENT_FRAMES) {
+        return '清晰音太短, 请多按一会儿';
+    }
+
+    return '没有听到清晰单音';
+}
+
+function handlePitch(result, now) {
+    recordingStats.totalFrames += 1;
+    recordingStats.maxRms = Math.max(recordingStats.maxRms, result.rms || 0);
+    recordingStats.maxConfidence = Math.max(recordingStats.maxConfidence, result.confidence || 0);
+    if (result.reason !== 'quiet') recordingStats.loudFrames += 1;
+
+    if (!result.frequency) {
+        if (recordingStats.totalFrames >= 4 && result.reason === 'quiet') {
+            renderCurrent();
+            setStatus('声音偏小, 靠近麦克风');
+            return;
+        }
+
+        if (recordingStats.totalFrames >= 4 && result.reason === 'unclear') {
+            setStatus('检测到声音, 请保持单音');
+            return;
+        }
+
+        if (recordingFrames.length > 0 && now - lastPitchAt > SILENCE_GAP_MS) {
+            setStatus(`已采集 ${recordingFrames.length} 帧`);
+        }
+        return;
+    }
+
+    const noteInfo = frequencyToNote(result.frequency);
+    renderCurrent(noteInfo);
+    lastPitchAt = now;
+    recordingStats.pitchedFrames += 1;
+    recordingFrames.push({
+        time: now,
         note: noteInfo.note,
         midi: noteInfo.midi,
         pitchClass: noteInfo.pitchClass,
         frequency: noteInfo.frequency,
         cents: noteInfo.cents,
+        confidence: result.confidence,
+        rms: result.rms,
     });
-    lastRecordedNote = noteInfo.note;
-    hasSilenceSinceNote = false;
-    setStatus(`已听到 ${recordingNotes.length} 个音`);
-}
-
-function handlePitch(result, now) {
-    if (!result.frequency) {
-        currentCandidate = null;
-        candidateStartedAt = 0;
-        if (!silenceStartedAt) silenceStartedAt = now;
-        if (now - silenceStartedAt > SILENCE_RESET_MS) {
-            hasSilenceSinceNote = true;
-            setStatus('继续按住, 逐个弹奏或哼唱');
-        }
-        return;
-    }
-
-    silenceStartedAt = 0;
-    const noteInfo = frequencyToNote(result.frequency);
-    renderCurrent(noteInfo);
-
-    if (currentCandidate !== noteInfo.note) {
-        currentCandidate = noteInfo.note;
-        candidateStartedAt = now;
-        return;
-    }
-
-    const stableEnough = now - candidateStartedAt >= STABLE_MS;
-    const shouldRecord = noteInfo.note !== lastRecordedNote || hasSilenceSinceNote;
-    if (stableEnough && shouldRecord) {
-        recordStableNote(noteInfo);
-    }
+    setStatus(`正在采集 ${recordingFrames.length} 帧`);
 }
 
 function tick(now = performance.now()) {
@@ -302,7 +447,7 @@ function tick(now = performance.now()) {
     lastFrameAt = now;
 
     analyser.getFloatTimeDomainData(timeBuffer);
-    const threshold = Number(els.sensitivity.value || 0.025);
+    const threshold = getRmsThreshold();
     handlePitch(detectPitch(timeBuffer, audioContext.sampleRate, threshold), now);
 }
 
@@ -355,12 +500,9 @@ async function startRecording() {
 
         recording = true;
         pendingStart = false;
-        recordingNotes = [];
-        currentCandidate = null;
-        candidateStartedAt = 0;
-        lastRecordedNote = null;
-        hasSilenceSinceNote = true;
-        silenceStartedAt = 0;
+        recordingFrames = [];
+        recordingStats = createRecordingStats();
+        lastPitchAt = 0;
         lastFrameAt = 0;
 
         setHoldState('recording');
@@ -408,14 +550,15 @@ function commitRecording() {
     setHoldState('processing');
     setStatus('正在识别');
 
-    if (recordingNotes.length === 0) {
-        setStatus('没有识别到稳定音高');
+    const recognizedNotes = extractNotesFromFrames(recordingFrames);
+    if (recognizedNotes.length === 0) {
+        setStatus(getRecordingFailureMessage());
         return;
     }
 
-    capturedNotes.push(...recordingNotes);
+    capturedNotes.push(...recognizedNotes);
     renderSequence();
-    setStatus(`识别完成: ${recordingNotes.length} 个音`);
+    setStatus(`识别完成: ${recognizedNotes.length} 个音`);
 }
 
 function stopRecording(commit = true) {
@@ -432,10 +575,9 @@ function stopRecording(commit = true) {
         commitRecording();
     }
 
-    currentCandidate = null;
-    candidateStartedAt = 0;
-    silenceStartedAt = 0;
-    recordingNotes = [];
+    recordingFrames = [];
+    recordingStats = createRecordingStats();
+    lastPitchAt = 0;
     renderCurrent();
     setHoldState('idle');
 }

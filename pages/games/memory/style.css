@@ -1,0 +1,406 @@
+/* 记忆游戏样式 */
+:root {
+    --memory-card-size: 120px;
+    --memory-grid-gap: 10px;
+    --memory-card-font-size: 24px;
+    --memory-animation-speed: 0.5s;
+    --primary-color-rgb: 52, 152, 219;
+}
+
+.memory-container {
+    display: grid;
+    grid-template-columns: minmax(520px, 560px) minmax(240px, 300px);
+    grid-template-areas: "board panel";
+    align-items: start;
+    justify-content: center;
+    gap: 28px;
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.game-info {
+    grid-area: panel;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+}
+
+.stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 0;
+    width: 100%;
+}
+
+.stat-item {
+    padding: 10px 15px;
+    background-color: var(--card-bg);
+    border-radius: 8px;
+    box-shadow: 0 2px 5px var(--box-shadow-color);
+    text-align: center;
+    min-width: 0;
+}
+
+.game-controls {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: flex-start;
+    align-items: stretch;
+    margin-bottom: 0;
+}
+
+.difficulty-selector {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: space-between;
+}
+
+select#difficulty {
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    background-color: var(--container-bg);
+    color: var(--text-color);
+    font-size: 14px;
+    cursor: pointer;
+}
+
+/* 记忆游戏板 */
+.memory-board {
+    grid-area: board;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--memory-grid-gap);
+    max-width: 600px;
+    width: 100%;
+    margin: 0 auto;
+}
+
+/* 适应不同难度的网格 */
+.memory-board.easy {
+    grid-template-columns: repeat(4, 1fr);
+    max-width: 400px;
+}
+
+.memory-board.medium {
+    grid-template-columns: repeat(6, 1fr);
+    max-width: 550px;
+}
+
+.memory-board.hard {
+    grid-template-columns: repeat(6, 1fr);
+    max-width: 550px;
+}
+
+/* 卡片样式 */
+.memory-card {
+    aspect-ratio: 1/1;
+    perspective: 1000px;
+    cursor: pointer;
+    touch-action: manipulation; /* 改善移动端触摸体验 */
+    -webkit-tap-highlight-color: transparent; /* 移除iOS点击高亮 */
+    -webkit-touch-callout: none; /* 防止长按菜单 */
+}
+
+.card-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transform-style: preserve-3d;
+    transition: transform var(--memory-animation-speed);
+    will-change: transform; /* 提升渲染性能 */
+}
+
+.memory-card.flipped .card-inner {
+    transform: rotateY(180deg);
+}
+
+.card-face {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    backface-visibility: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    user-select: none;
+}
+
+.card-front {
+    background-color: var(--primary-color);
+    background-image: linear-gradient(45deg, var(--primary-color), var(--primary-color-light));
+    color: white;
+    transform: rotateY(180deg);
+    font-size: var(--memory-card-font-size);
+}
+
+.card-back {
+    background-color: var(--card-bg);
+    background-image: repeating-linear-gradient(
+        45deg,
+        var(--card-bg),
+        var(--card-bg) 10px,
+        var(--border-color) 10px,
+        var(--border-color) 20px
+    );
+    border: 2px solid var(--border-color);
+}
+
+/* 卡片匹配动画 */
+.memory-card.matched .card-front {
+    background-image: linear-gradient(45deg, var(--secondary-color), var(--secondary-color-light));
+    animation: pulse 1s;
+}
+
+@keyframes pulse {
+    0% {
+        transform: rotateY(180deg) scale(1);
+    }
+    50% {
+        transform: rotateY(180deg) scale(1.1);
+    }
+    100% {
+        transform: rotateY(180deg) scale(1);
+    }
+}
+
+/* 游戏结果弹窗 */
+.game-result {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 100;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s, visibility 0.3s;
+}
+
+.game-result.show {
+    opacity: 1;
+    visibility: visible;
+}
+
+.result-content {
+    background-color: var(--container-bg);
+    padding: 30px;
+    border-radius: 15px;
+    text-align: center;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    max-width: 90%;
+    width: 350px;
+}
+
+.result-content h2 {
+    color: var(--secondary-color);
+    margin-top: 0;
+}
+
+.result-stats {
+    margin: 20px 0;
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.result-stat {
+    font-weight: bold;
+    font-size: 18px;
+}
+
+/* 触摸反馈效果 */
+.memory-card.touch-active .card-inner {
+    transform: scale(0.95);
+    box-shadow: 0 0 10px rgba(var(--primary-color-rgb, 52, 152, 219), 0.6);
+}
+
+/* 添加触摸指导提示 */
+.touch-guide {
+    display: none;
+    padding: 10px;
+    margin: 10px 0;
+    background-color: var(--card-bg);
+    border-radius: 5px;
+    text-align: center;
+    font-size: 14px;
+    color: var(--text-color);
+    border-left: 3px solid var(--primary-color);
+}
+
+/* 响应式样式 - 合并的媒体查询 */
+@media (max-width: 768px) {
+    .touch-guide {
+        display: block;
+    }
+}
+
+@media (max-width: 600px) {
+    :root {
+        --memory-grid-gap: 5px;
+        --memory-card-font-size: 18px;
+        --memory-animation-speed: 0.3s; /* 更快的动画，更好的响应体验 */
+    }
+    
+    .memory-board {
+        touch-action: none; /* 防止浏览器默认行为干扰游戏 */
+    }
+    
+    .stat-item {
+        padding: 8px 10px;
+        min-width: 60px;
+        font-size: 14px;
+    }
+    
+    .game-controls {
+        flex-direction: column;
+        gap: 10px;
+        width: 100%;
+    }
+    
+    .difficulty-selector,
+    #start-btn, 
+    #reset-btn {
+        width: 100%; /* 更大的触控区域 */
+        margin-bottom: 8px;
+    }
+    
+    #start-btn, 
+    #reset-btn,
+    #play-again-btn {
+        padding: 12px 0; /* 增加按钮高度 */
+        font-size: 16px;
+        font-weight: bold;
+    }
+    
+    .memory-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        max-width: 800px;
+        padding: 10px; /* 减少页面边距，增加游戏区域空间 */
+    }
+
+    .game-info {
+        display: contents;
+    }
+
+    .game-controls {
+        order: 1;
+    }
+
+    .memory-board {
+        order: 2;
+    }
+
+    .stats {
+        order: 3;
+        margin-top: 10px;
+    }
+
+    .touch-guide {
+        order: 4;
+        width: 100%;
+    }
+    
+    /* 优化结果弹窗 */
+    .result-content {
+        padding: 20px;
+        width: 90%;
+        max-width: 300px;
+    }
+}
+
+@media (min-width: 601px) and (max-width: 900px) {
+    .memory-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        max-width: 800px;
+        gap: 18px;
+    }
+
+    .game-info {
+        display: contents;
+    }
+
+    .stats {
+        display: flex;
+        flex-direction: row;
+        gap: 15px;
+        order: 3;
+        width: 100%;
+        max-width: 550px;
+    }
+
+    .stat-item {
+        min-width: 80px;
+    }
+
+    .game-controls {
+        order: 1;
+        flex-direction: row;
+        justify-content: center;
+        align-items: center;
+        margin-bottom: 15px;
+        width: 100%;
+        max-width: 550px;
+    }
+
+    .memory-board {
+        order: 2;
+    }
+
+    .touch-guide {
+        order: 4;
+    }
+}
+
+/* 横屏模式优化 */
+@media (max-width: 900px) and (orientation: landscape) {
+    :root {
+        --memory-grid-gap: 6px;
+        --memory-card-font-size: 16px;
+    }
+    
+    .memory-container {
+        padding: 10px;
+    }
+    
+    .memory-board {
+        max-height: 70vh;
+        max-width: 80vw;
+    }
+    
+    .game-info {
+        margin-bottom: 10px;
+    }
+    
+    .game-controls {
+        flex-direction: row;
+    }
+    
+    .difficulty-selector,
+    #start-btn,
+    #reset-btn {
+        width: auto;
+    }
+    
+    .stats {
+        margin-bottom: 5px;
+    }
+} 

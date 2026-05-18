@@ -1,0 +1,1092 @@
+/* Markdown阅读器样式 */
+
+/* 重置样式 - 移除默认边距 */
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+}
+
+/* 全局容器 */
+.container {
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+}
+
+/* 顶部工具栏 */
+.toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    background-color: var(--card-bg);
+    border-bottom: 1px solid var(--border-color);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    flex-shrink: 0;
+}
+
+.toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.toolbar-left h1 {
+    font-size: 1.25rem;
+    margin: 0;
+    color: var(--text-color);
+}
+
+.back-link {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: var(--text-color);
+    text-decoration: none;
+    transition: background-color 0.3s, color 0.3s, opacity 0.3s;
+}
+
+.back-link:hover {
+    background-color: var(--hover-bg);
+    color: var(--accent-color);
+    opacity: 0.8;
+    transform: none;
+}
+
+.toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.toolbar-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border: none;
+    background-color: transparent;
+    color: var(--text-color);
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.3s;
+    /* 确保触摸区域 */
+    min-width: 44px;
+    min-height: 44px;
+}
+
+.toolbar-btn:hover {
+    background-color: var(--hover-bg);
+}
+
+/* 主内容区 */
+.main-content {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+/* TOC遮罩层 */
+.toc-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.toc-overlay.active {
+    display: block;
+    opacity: 1;
+}
+
+/* 目录侧边栏 */
+.toc-sidebar {
+    width: 280px;
+    background-color: var(--card-bg);
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex-shrink: 0;
+    transition: transform 0.3s ease;
+}
+
+.toc-sidebar.hidden {
+    transform: translateX(-100%);
+}
+
+.toc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.toc-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    color: var(--text-color);
+}
+
+.toc-close-btn {
+    display: none;
+    border: none;
+    background: transparent;
+    font-size: 1.5rem;
+    color: var(--text-color);
+    cursor: pointer;
+    width: 30px;
+    height: 30px;
+    line-height: 1;
+}
+
+.toc-nav {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem;
+}
+
+.toc-empty {
+    color: var(--text-secondary);
+    text-align: center;
+    margin-top: 2rem;
+}
+
+.toc-nav ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.toc-nav li {
+    margin: 0.25rem 0;
+}
+
+.toc-nav a {
+    display: block;
+    padding: 0.5rem 0.75rem;
+    color: var(--text-color);
+    text-decoration: none;
+    border-radius: 4px;
+    transition: background-color 0.3s;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+.toc-nav a:hover {
+    background-color: var(--hover-bg);
+}
+
+.toc-nav a.active {
+    background-color: var(--accent-color);
+    color: white;
+}
+
+/* 嵌套目录缩进 */
+.toc-nav ul ul {
+    margin-left: 1rem;
+}
+
+/* 内容区域 */
+.content-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+}
+
+/* 文件上传区 */
+.upload-area {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+}
+
+.upload-box {
+    text-align: center;
+    padding: 3rem 2rem;
+    border: 2px dashed var(--border-color);
+    border-radius: 8px;
+    background-color: var(--card-bg);
+    transition: border-color 0.3s, background-color 0.3s;
+}
+
+.upload-box.dragover {
+    border-color: var(--accent-color);
+    background-color: var(--hover-bg);
+}
+
+.upload-icon {
+    color: var(--accent-color);
+    margin-bottom: 1rem;
+}
+
+.upload-box h2 {
+    font-size: 1.5rem;
+    margin: 1rem 0;
+    color: var(--text-color);
+}
+
+.upload-box p {
+    color: var(--text-secondary);
+    margin: 0.5rem 0;
+}
+
+.select-file-btn {
+    margin-top: 1.5rem;
+    padding: 0.75rem 2rem;
+    background-color: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: opacity 0.3s;
+    min-height: 44px;
+}
+
+.select-file-btn:hover {
+    opacity: 0.9;
+}
+
+.upload-hint {
+    margin-top: 1rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+/* Markdown渲染内容 */
+.markdown-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 2rem;
+    max-width: 900px;
+    margin: 0 auto;
+    width: 100%;
+    line-height: 1.6;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+}
+
+/* Markdown基础样式 */
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+    font-weight: 600;
+    line-height: 1.25;
+    color: var(--text-color);
+}
+
+.markdown-body h1 {
+    font-size: 2em;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.3em;
+}
+
+.markdown-body h2 {
+    font-size: 1.5em;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.3em;
+}
+
+.markdown-body h3 { font-size: 1.25em; }
+.markdown-body h4 { font-size: 1em; }
+.markdown-body h5 { font-size: 0.875em; }
+.markdown-body h6 { font-size: 0.85em; color: var(--text-secondary); }
+
+.markdown-body p {
+    margin-top: 0;
+    margin-bottom: 1em;
+}
+
+.markdown-body a {
+    color: var(--accent-color);
+    text-decoration: none;
+    word-break: break-all;
+}
+
+.markdown-body a:hover {
+    text-decoration: underline;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+    margin-top: 0;
+    margin-bottom: 1em;
+    padding-left: 2em;
+}
+
+.markdown-body li {
+    margin: 0.25em 0;
+}
+
+.markdown-body blockquote {
+    margin: 1em 0;
+    padding: 0 1em;
+    border-left: 4px solid var(--border-color);
+    color: var(--text-secondary);
+}
+
+.markdown-body code {
+    padding: 0.2em 0.4em;
+    margin: 0;
+    font-size: 85%;
+    background-color: var(--code-bg);
+    border-radius: 3px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    word-break: break-all;
+}
+
+.markdown-body pre {
+    position: relative;
+    margin: 1em 0;
+    padding: 1rem;
+    background-color: var(--code-bg);
+    border-radius: 6px;
+    overflow-x: auto;
+}
+
+.markdown-body pre code {
+    padding: 0;
+    background-color: transparent;
+    font-size: 0.9em;
+    line-height: 1.5;
+    word-break: normal;
+    white-space: pre;
+}
+
+.markdown-body table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1em 0;
+}
+
+.markdown-body table th,
+.markdown-body table td {
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.markdown-body table th {
+    background-color: var(--card-bg);
+    font-weight: 600;
+}
+
+.markdown-body img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+}
+
+.markdown-body hr {
+    height: 0;
+    margin: 1.5em 0;
+    border: 0;
+    border-top: 1px solid var(--border-color);
+}
+
+/* 代码块复制按钮 */
+.code-block-wrapper {
+    position: relative;
+}
+
+.copy-code-btn {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    background-color: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.code-block-wrapper:hover .copy-code-btn {
+    opacity: 1;
+}
+
+.copy-code-btn:hover {
+    opacity: 0.9;
+}
+
+/* 文件信息栏 */
+.file-info {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 0.75rem 1.5rem;
+    background-color: var(--card-bg);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 10;
+}
+
+.file-name {
+    font-weight: 500;
+    color: var(--text-color);
+}
+
+.close-file-btn {
+    border: none;
+    background: transparent;
+    font-size: 1.5rem;
+    color: var(--text-color);
+    cursor: pointer;
+    width: 30px;
+    height: 30px;
+    line-height: 1;
+}
+
+.close-file-btn:hover {
+    color: var(--accent-color);
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    /* 移动端允许整页滚动 */
+    html, body {
+        overflow: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .container {
+        height: auto;
+        min-height: 100vh;
+        overflow: visible;
+    }
+
+    .main-content {
+        overflow: visible;
+        display: block; /* 改为block布局，TOC完全脱离文档流 */
+    }
+
+    .content-area {
+        overflow: visible;
+        width: 100%; /* 确保内容区占满全宽 */
+    }
+
+    .markdown-body {
+        overflow-y: visible;
+    }
+
+    .toolbar {
+        padding: 0.75rem 1rem;
+    }
+
+    .toolbar-left h1 {
+        font-size: 1rem;
+    }
+
+    .back-link span {
+        display: none;
+    }
+
+    .back-link {
+        min-width: 44px;
+        min-height: 44px;
+        justify-content: center;
+        padding: 0;
+    }
+
+    /* 移动端TOC为抽屉式 */
+    .toc-sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: min(280px, 85vw);
+        z-index: 1000;
+        box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
+    }
+
+    .toc-sidebar.hidden {
+        transform: translateX(-100%);
+    }
+
+    .toc-close-btn {
+        display: block;
+    }
+
+    .toc-nav {
+        padding: 0.5rem;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .toc-nav a {
+        padding: 0.75rem 1rem;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        font-size: 1rem;
+    }
+
+    .toc-nav ul ul a {
+        padding-left: 2rem;
+    }
+
+    .markdown-body {
+        padding: 4rem 1rem 1.5rem 1rem;
+        font-size: 16px;
+        line-height: 1.8;
+        max-width: 100%;
+        width: 100%;
+        box-sizing: border-box;
+        margin: 0;
+    }
+
+    /* 文件信息栏移动端优化 */
+    .file-info {
+        padding: 0.5rem 1rem;
+        font-size: 0.9rem;
+    }
+
+    /* 移动端标题优化 */
+    .markdown-body h1 {
+        font-size: 1.75em;
+        word-break: break-word;
+    }
+
+    .markdown-body h2 {
+        font-size: 1.5em;
+        word-break: break-word;
+    }
+
+    .markdown-body h3 {
+        font-size: 1.25em;
+        word-break: break-word;
+    }
+
+    /* 移动端强制所有元素自动换行 */
+    .markdown-body p,
+    .markdown-body li,
+    .markdown-body blockquote,
+    .markdown-body td,
+    .markdown-body th {
+        word-break: break-word;
+        overflow-wrap: break-word;
+    }
+
+    /* 链接强制换行 */
+    .markdown-body a {
+        word-break: break-all;
+        overflow-wrap: break-word;
+    }
+
+    /* 代码块移动端自动换行 */
+    .markdown-body pre {
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .markdown-body pre code {
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    /* 行内代码强制换行 */
+    .markdown-body code {
+        word-break: break-word;
+        overflow-wrap: break-word;
+    }
+
+    /* 表格单元格强制换行 */
+    .markdown-body table {
+        display: block;
+        overflow-x: auto;
+    }
+
+    .markdown-body table th,
+    .markdown-body table td {
+        word-break: break-word;
+        overflow-wrap: break-word;
+        max-width: 300px;
+    }
+
+    .markdown-body p {
+        margin: 1em 0;
+    }
+
+    /* 代码块移动端优化 */
+    .markdown-body pre {
+        padding: 0.75rem;
+        font-size: 14px;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .markdown-body code {
+        font-size: 90%;
+        word-break: break-word;
+    }
+
+    .markdown-body pre code {
+        font-size: 14px;
+    }
+
+    /* 表格移动端优化 - 横向滚动 */
+    .markdown-body table {
+        display: block;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .markdown-body table th,
+    .markdown-body table td {
+        padding: 0.5rem;
+        font-size: 14px;
+        min-width: 80px;
+    }
+
+    /* 图片移动端优化 */
+    .markdown-body img {
+        max-width: 100%;
+        height: auto;
+        display: block;
+        margin: 1rem auto;
+    }
+
+    .upload-box {
+        padding: 2rem 1rem;
+    }
+
+    .upload-box h2 {
+        font-size: 1.25rem;
+    }
+}
+
+/* 模态框样式 */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 10000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+}
+
+.modal-content {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: var(--card-bg);
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    max-width: 600px;
+    width: 90%;
+    max-height: 80vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    color: var(--text-color);
+}
+
+.modal-close {
+    border: none;
+    background: transparent;
+    font-size: 1.5rem;
+    color: var(--text-color);
+    cursor: pointer;
+    width: 30px;
+    height: 30px;
+    line-height: 1;
+    padding: 0;
+    transition: color 0.3s;
+}
+
+.modal-close:hover {
+    color: var(--accent-color);
+}
+
+.modal-body {
+    padding: 1.5rem;
+    overflow-y: auto;
+    flex: 1;
+}
+
+/* 密码输入样式 */
+.password-hint {
+    margin-bottom: 1rem;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.password-input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 2px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-size: 1rem;
+    transition: border-color 0.3s;
+}
+
+.password-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+}
+
+.modal-actions {
+    margin-top: 1.5rem;
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+}
+
+.btn-primary,
+.btn-secondary {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 4px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: opacity 0.3s;
+}
+
+.btn-primary {
+    background-color: var(--accent-color);
+    color: white;
+}
+
+.btn-primary:hover {
+    opacity: 0.9;
+}
+
+.btn-secondary {
+    background-color: var(--border-color);
+    color: var(--text-color);
+}
+
+.btn-secondary:hover {
+    opacity: 0.8;
+}
+
+.password-error {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background-color: #fee;
+    border: 1px solid #fcc;
+    border-radius: 4px;
+    color: #c33;
+    font-size: 0.9rem;
+}
+
+/* 项目文档列表样式 */
+.project-docs-header {
+    padding: 1rem 1.5rem;
+    background-color: var(--card-bg);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.project-docs-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    color: var(--text-color);
+}
+
+.close-project-btn {
+    padding: 0.5rem 1rem;
+    background-color: var(--border-color);
+    color: var(--text-color);
+    border: none;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: opacity 0.3s;
+}
+
+.close-project-btn:hover {
+    opacity: 0.8;
+}
+
+.doc-list-category {
+    margin-bottom: 0.5rem;
+}
+
+.doc-list-category-title {
+    padding: 0.5rem 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.doc-list-item {
+    display: block;
+    padding: 0.75rem 1rem;
+    color: var(--text-color);
+    text-decoration: none;
+    border-radius: 4px;
+    transition: background-color 0.3s;
+    font-size: 0.9rem;
+    margin: 0.25rem 0.5rem;
+}
+
+.doc-list-item:hover {
+    background-color: var(--hover-bg);
+}
+
+.doc-list-item.active {
+    background-color: var(--accent-color);
+    color: white;
+}
+
+/* 响应式 - 模态框 */
+@media (max-width: 768px) {
+    .modal {
+        align-items: flex-start;
+        overflow-y: auto;
+        padding: 20px 0;
+    }
+
+    .modal-content {
+        position: relative;
+        top: auto;
+        left: auto;
+        transform: none;
+        margin: 0 auto;
+        width: 95%;
+        max-height: none;
+    }
+
+    .modal-header,
+    .modal-body {
+        padding: 1rem;
+    }
+
+    .modal-body {
+        max-height: 60vh;
+        overflow-y: auto;
+    }
+
+    .modal-actions {
+        flex-direction: column;
+        padding-bottom: env(safe-area-inset-bottom, 0);
+    }
+
+    .btn-primary,
+    .btn-secondary {
+        width: 100%;
+        min-height: 44px;
+        padding: 0.75rem 1.5rem;
+    }
+
+    .doc-list-item {
+        padding: 1rem;
+        min-height: 44px;
+        font-size: 1rem;
+        display: flex;
+        align-items: center;
+    }
+
+    .close-file-btn,
+    .modal-close,
+    .toc-close-btn {
+        min-width: 44px;
+        min-height: 44px;
+        width: 44px;
+        height: 44px;
+    }
+
+    .close-project-btn {
+        min-height: 44px;
+        padding: 0.75rem 1rem;
+    }
+
+    .password-input {
+        font-size: 16px;
+    }
+}
+
+/* 隐秘的项目入口按钮 */
+.secret-btn {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.3;
+    transition: all 0.3s ease;
+    z-index: 9999;
+    padding: 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.secret-btn:hover {
+    opacity: 0.8;
+    background-color: var(--hover-bg);
+    border-color: var(--accent-color);
+    transform: scale(1.1);
+}
+
+.secret-btn:active {
+    transform: scale(0.95);
+}
+
+.secret-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+    .secret-btn {
+        width: 44px;
+        height: 44px;
+        bottom: 20px;
+        left: 20px;
+        right: auto;
+        opacity: 0.4;
+    }
+
+    .secret-btn svg {
+        width: 18px;
+        height: 18px;
+    }
+}
+
+/* 阅读进度滑块 */
+.reading-progress-bar {
+    position: fixed;
+    right: 30px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 2000;
+    opacity: 0.6;
+    transition: opacity 0.3s;
+    pointer-events: auto;
+}
+
+.reading-progress-bar:hover {
+    opacity: 1;
+}
+
+.progress-track {
+    width: 6px;
+    height: 300px;
+    background: var(--border-color);
+    border-radius: 3px;
+    position: relative;
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.progress-thumb {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 24px;
+    height: 24px;
+    background: var(--accent-color);
+    border-radius: 50%;
+    cursor: grab;
+    transition: transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    pointer-events: auto;
+    touch-action: none;
+}
+
+.progress-thumb:active {
+    cursor: grabbing;
+    transform: translateX(-50%) scale(1.2);
+}
+
+.progress-percentage {
+    position: absolute;
+    right: 32px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 12px;
+    color: var(--text-color);
+    background: var(--card-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.progress-thumb:hover .progress-percentage {
+    opacity: 1;
+}
+
+/* 移动端阅读进度条 */
+@media (max-width: 768px) {
+    /* 移动端完全隐藏进度条 */
+    .reading-progress-bar {
+        display: none !important;
+    }
+}

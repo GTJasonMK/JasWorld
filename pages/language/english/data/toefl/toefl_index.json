@@ -1,0 +1,130 @@
+{
+  "version": "1.0",
+  "bookId": "toefl",
+  "language": "english",
+  "totalWords": 4516,
+  "totalParts": 10,
+  "generated": "2025-11-05T17:12:14.089Z",
+  "parts": [
+    {
+      "partId": 1,
+      "wordlistFile": "wordlists/toefl/part1.txt",
+      "outputFile": "data/toefl/toefl_pregenerated_part1.json",
+      "wordCount": 452,
+      "wordRange": {
+        "start": 1,
+        "end": 452,
+        "firstWord": "abandon",
+        "lastWord": "ceremonious"
+      }
+    },
+    {
+      "partId": 2,
+      "wordlistFile": "wordlists/toefl/part2.txt",
+      "outputFile": "data/toefl/toefl_pregenerated_part2.json",
+      "wordCount": 452,
+      "wordRange": {
+        "start": 453,
+        "end": 904,
+        "firstWord": "ceremony",
+        "lastWord": "disarrange"
+      }
+    },
+    {
+      "partId": 3,
+      "wordlistFile": "wordlists/toefl/part3.txt",
+      "outputFile": "data/toefl/toefl_pregenerated_part3.json",
+      "wordCount": 452,
+      "wordRange": {
+        "start": 905,
+        "end": 1356,
+        "firstWord": "disarray",
+        "lastWord": "gash"
+      }
+    },
+    {
+      "partId": 4,
+      "wordlistFile": "wordlists/toefl/part4.txt",
+      "outputFile": "data/toefl/toefl_pregenerated_part4.json",
+      "wordCount": 452,
+      "wordRange": {
+        "start": 1357,
+        "end": 1808,
+        "firstWord": "gasoline",
+        "lastWord": "lurk"
+      }
+    },
+    {
+      "partId": 5,
+      "wordlistFile": "wordlists/toefl/part5.txt",
+      "outputFile": "data/toefl/toefl_pregenerated_part5.json",
+      "wordCount": 452,
+      "wordRange": {
+        "start": 1809,
+        "end": 2260,
+        "firstWord": "luster",
+        "lastWord": "rehearse"
+      }
+    },
+    {
+      "partId": 6,
+      "wordlistFile": "wordlists/toefl/part6.txt",
+      "outputFile": "data/toefl/toefl_pregenerated_part6.json",
+      "wordCount": 452,
+      "wordRange": {
+        "start": 2261,
+        "end": 2712,
+        "firstWord": "reign",
+        "lastWord": "transient"
+      }
+    },
+    {
+      "partId": 7,
+      "wordlistFile": "wordlists/toefl/part7.txt",
+      "outputFile": "data/toefl/toefl_pregenerated_part7.json",
+      "wordCount": 452,
+      "wordRange": {
+        "start": 2713,
+        "end": 3164,
+        "firstWord": "transition",
+        "lastWord": "conventional"
+      }
+    },
+    {
+      "partId": 8,
+      "wordlistFile": "wordlists/toefl/part8.txt",
+      "outputFile": "data/toefl/toefl_pregenerated_part8.json",
+      "wordCount": 452,
+      "wordRange": {
+        "start": 3165,
+        "end": 3616,
+        "firstWord": "converge",
+        "lastWord": "invertebrate"
+      }
+    },
+    {
+      "partId": 9,
+      "wordlistFile": "wordlists/toefl/part9.txt",
+      "outputFile": "data/toefl/toefl_pregenerated_part9.json",
+      "wordCount": 452,
+      "wordRange": {
+        "start": 3617,
+        "end": 4068,
+        "firstWord": "invitation",
+        "lastWord": "rash"
+      }
+    },
+    {
+      "partId": 10,
+      "wordlistFile": "wordlists/toefl/part10.txt",
+      "outputFile": "data/toefl/toefl_pregenerated_part10.json",
+      "wordCount": 448,
+      "wordRange": {
+        "start": 4069,
+        "end": 4516,
+        "firstWord": "rattle",
+        "lastWord": "zone"
+      }
+    }
+  ]
+}

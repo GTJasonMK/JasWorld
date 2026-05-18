@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>语言学习 - 多语种学习平台</title>
+</head>
+<body>
+    <div class="language-container">
+        <header class="language-header">
+            <a class="btn-back" href="../../index.html#language">← 返回</a>
+            <h1>语言学习</h1>
+            <p class="subtitle">选择您想要学习的语言</p>
+        </header>
+
+        <main class="language-grid">
+            <div class="language-card" onclick="location.href='english/index.html'">
+                <div class="language-icon">🇬🇧</div>
+                <h3>英语学习</h3>
+                <p class="language-name">English Learning</p>
+                <div class="language-stats">
+                    <span>📚 4个词库</span>
+                    <span>💡 单词练习</span>
+                </div>
+            </div>
+
+            <div class="language-card" onclick="location.href='japanese/index.html'">
+                <div class="language-icon">🇯🇵</div>
+                <h3>日语学习</h3>
+                <p class="language-name">日本語学習</p>
+                <div class="language-stats">
+                    <span>📚 词库准备中</span>
+                    <span>💡 单词练习</span>
+                </div>
+            </div>
+        </main>
+
+        <footer class="language-footer">
+            <p>更多语言模块正在开发中...</p>
+        </footer>
+    </div>
+    <script type="module">
+        import '../../src/styles/index.css';
+        import './style.css';
+        import { bootstrapCore, themeManager } from '../../src/core/index.js';
+        bootstrapCore({ createThemeToggle: true });
+        console.log('语言选择页 | 主题:', themeManager.current());
+    </script>
+</body>
+</html>

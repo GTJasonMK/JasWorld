@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>光阴的游乐场 — 社区广场</title>
+  </head>
+  <body>
+    <div class="container">
+      <a href="../settings/" class="settings-link" title="设置">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </a>
+      <header>
+        <h1>
+          <span class="page-title" id="pageTitle">社区广场</span>
+          <span class="mode-icon" id="modeIcon"></span>
+        </h1>
+        <nav>
+          <ul>
+            <li><a href="../../index.html#forum">← 返回</a></li>
+            <li><a href="#" class="active">广场</a></li>
+          </ul>
+        </nav>
+        <div class="user-info" id="user-info" style="display: none;">
+          <span id="user-avatar"></span>
+          <span id="user-name"></span>
+          <span id="admin-badge" style="display: none;" class="admin-badge">管理者</span>
+          <button id="logout-button" class="secondary-button">离开</button>
+        </div>
+      </header>
+
+      <main>
+        <section id="forum" class="section active">
+          <div class="auth-container" id="auth-container">
+            <div class="auth-panel" id="login-panel">
+              <h3>踏入广场</h3>
+              <div class="auth-message" id="login-message"></div>
+              <form id="login-form">
+                <div class="form-group">
+                  <label for="login-username">GitHub 用户名:</label>
+                  <input type="text" id="login-username" required />
+                </div>
+                <div class="form-group">
+	                  <label for="login-token">GitHub 访问令牌:</label>
+	                  <input type="password" id="login-token" required />
+	                  <small>需要 <code>public_repo</code> 和 <code>gist</code> 权限；令牌仅保存在本次浏览器会话。</small>
+	                </div>
+                <div class="form-actions">
+                  <button type="submit" class="primary-button">进入</button>
+                </div>
+              </form>
+              <div class="auth-help">
+                <p>如何获取访问令牌？<a href="https://github.com/settings/tokens" target="_blank" rel="noopener">查看指引</a></p>
+              </div>
+            </div>
+          </div>
+
+          <div class="forum-container" id="forum-container" style="display: none;">
+            <div class="forum-tabs">
+              <button class="tab-button active" data-tab="discussions">广场漫步</button>
+              <button class="tab-button" data-tab="create">留下足迹</button>
+              <button class="tab-button" data-tab="profile">个人天地</button>
+            </div>
+
+            <div class="tab-content" id="discussions-tab">
+              <div class="forum-filters">
+                <select id="filter-label">
+                  <option value="">所有话题</option>
+                  <option value="游戏">游戏</option>
+                  <option value="音乐">音乐</option>
+                  <option value="问题">问题</option>
+                  <option value="建议">建议</option>
+                </select>
+                <div class="search-box">
+                  <input type="text" id="search-input" placeholder="寻找..." />
+                  <button id="search-button">寻找</button>
+                </div>
+              </div>
+
+              <div class="issues-list" id="issues-list">
+                <div class="loading">聆听中...</div>
+              </div>
+
+              <div class="pagination" id="pagination"></div>
+            </div>
+
+            <div class="tab-content" id="create-tab" style="display: none;">
+              <form id="create-issue-form">
+                <div class="form-group">
+                  <label for="issue-title">标题:</label>
+                  <input type="text" id="issue-title" required />
+                </div>
+                <div class="form-group">
+                  <label for="issue-label">话题:</label>
+                  <select id="issue-label" required>
+                    <option value="游戏">游戏</option>
+                    <option value="音乐">音乐</option>
+                    <option value="问题">问题</option>
+                    <option value="建议">建议</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="issue-body">正文:</label>
+                  <textarea id="issue-body" rows="10" required></textarea>
+                  <small>支持 Markdown 格式</small>
+                </div>
+                <div class="form-actions">
+                  <button type="submit" class="primary-button">发布</button>
+                </div>
+              </form>
+            </div>
+
+            <div class="tab-content" id="profile-tab" style="display: none;">
+              <div class="profile-container">
+                <h3>个人天地</h3>
+                <form id="profile-form">
+                  <div class="form-group">
+                    <label for="user-nickname">昵称:</label>
+                    <input type="text" id="user-nickname" placeholder="你在这里的称呼" />
+                    <small>留空则使用 GitHub 用户名</small>
+                  </div>
+                  <div class="form-group">
+                    <label for="user-signature">签名:</label>
+                    <textarea id="user-signature" rows="3" placeholder="留下你的印记..."></textarea>
+                  </div>
+                  <div class="form-group">
+                    <label for="user-avatar-url">头像URL:</label>
+                    <input type="text" id="user-avatar-url" placeholder="输入图片链接" />
+                    <small>留空则使用 GitHub 头像</small>
+                  </div>
+                  <div class="form-group">
+                    <label>头像预览:</label>
+                    <div class="avatar-preview" id="avatar-preview"></div>
+                  </div>
+                  <div class="form-group">
+                    <div class="gist-sync-status" id="gist-sync-status">
+                      <span class="status-icon"></span>
+                      <span class="status-text">查看同步状态...</span>
+                    </div>
+                  </div>
+                  <div class="form-actions">
+                    <button type="submit" class="primary-button">保存</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+
+          <div class="issue-detail" id="issue-detail" style="display: none;">
+            <button id="back-to-list" class="secondary-button">返回广场</button>
+
+            <div class="issue-content">
+              <div class="issue-header">
+                <h3 id="detail-title"></h3>
+                <div class="issue-meta">
+                  <span id="detail-author"></span>
+                  <span id="detail-date"></span>
+                  <span id="detail-label"></span>
+                </div>
+              </div>
+
+              <div class="issue-body" id="detail-body"></div>
+
+              <div class="comments-section">
+                <h4>回音 (<span id="comments-count">0</span>)</h4>
+                <div class="comments-list" id="comments-list"></div>
+
+                <div class="comment-form">
+                  <h4>留下你的声音</h4>
+                  <form id="comment-form">
+                    <div class="form-group">
+                      <textarea id="comment-body" rows="5" required></textarea>
+                      <small>支持 Markdown 格式</small>
+                    </div>
+                    <div class="form-actions">
+                      <button type="submit" class="primary-button">发出</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <p>© 光阴的游乐场</p>
+      </footer>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

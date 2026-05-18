@@ -1,0 +1,139 @@
+/* 全局主题化滚动条与滑杆控件 */
+
+* {
+    scrollbar-width: thin !important;
+    scrollbar-color: var(--scrollbar-thumb) transparent !important;
+}
+
+*::-webkit-scrollbar {
+    width: 10px !important;
+    height: 10px !important;
+}
+
+*::-webkit-scrollbar-track {
+    background: var(--scrollbar-track) !important;
+    border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb {
+    min-height: 40px;
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background:
+        linear-gradient(180deg, var(--scrollbar-thumb), var(--scrollbar-thumb-hover))
+        padding-box !important;
+}
+
+*::-webkit-scrollbar-thumb:hover,
+*::-webkit-scrollbar-thumb:active {
+    background:
+        linear-gradient(180deg, var(--scrollbar-thumb-hover), var(--range-fill-end))
+        padding-box !important;
+}
+
+*::-webkit-scrollbar-corner {
+    background: transparent !important;
+}
+
+input[type="range"] {
+    --range-progress: 50%;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    min-height: 28px;
+    border: 0 !important;
+    background: transparent !important;
+    color: var(--range-fill-end);
+    cursor: pointer;
+    outline: none;
+    vertical-align: middle;
+    accent-color: var(--range-fill-end);
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+    height: 8px;
+    border: 1px solid var(--control-border);
+    border-radius: 999px;
+    background:
+        linear-gradient(
+            90deg,
+            var(--range-fill-start) 0%,
+            var(--range-fill-end) var(--range-progress),
+            var(--range-track) var(--range-progress),
+            var(--range-track) 100%
+        ) !important;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    width: 20px !important;
+    height: 20px !important;
+    margin-top: -7px;
+    border: 2px solid var(--range-thumb-border) !important;
+    border-radius: 50% !important;
+    background:
+        radial-gradient(circle at 35% 30%, #ffffff 0%, var(--range-thumb-bg) 52%, var(--range-fill-start) 100%)
+        !important;
+    box-shadow:
+        0 0 0 3px rgba(255, 255, 255, 0.08),
+        0 4px 12px rgba(0, 0, 0, 0.25);
+    cursor: pointer;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+input[type="range"]:hover::-webkit-slider-thumb,
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+    border-color: var(--range-fill-end) !important;
+    transform: scale(1.08);
+    box-shadow:
+        0 0 0 5px var(--range-focus-ring),
+        0 6px 16px rgba(0, 0, 0, 0.28);
+}
+
+input[type="range"]::-moz-range-track {
+    height: 8px;
+    border: 1px solid var(--control-border);
+    border-radius: 999px;
+    background: var(--range-track) !important;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+input[type="range"]::-moz-range-progress {
+    height: 8px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--range-fill-start), var(--range-fill-end)) !important;
+}
+
+input[type="range"]::-moz-range-thumb {
+    width: 18px !important;
+    height: 18px !important;
+    border: 2px solid var(--range-thumb-border) !important;
+    border-radius: 50% !important;
+    background:
+        radial-gradient(circle at 35% 30%, #ffffff 0%, var(--range-thumb-bg) 52%, var(--range-fill-start) 100%)
+        !important;
+    box-shadow:
+        0 0 0 3px rgba(255, 255, 255, 0.08),
+        0 4px 12px rgba(0, 0, 0, 0.25);
+    cursor: pointer;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+input[type="range"]:hover::-moz-range-thumb,
+input[type="range"]:focus-visible::-moz-range-thumb {
+    border-color: var(--range-fill-end) !important;
+    transform: scale(1.08);
+    box-shadow:
+        0 0 0 5px var(--range-focus-ring),
+        0 6px 16px rgba(0, 0, 0, 0.28);
+}
+
+input[type="range"]:focus-visible {
+    outline: none;
+}
+
+input[type="range"]:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}

@@ -1,0 +1,227 @@
+/**
+ * 页面背景特效
+ *
+ * 两层背景效果：大面积渐变光晕（在 body 背景上） + 粒子网点（Canvas）。
+ * 核心样式已内联到 vite.config.js，保证首帧可见。
+ * GPU 加速，尊重主题变量与无障碍偏好。
+ */
+
+/* ---- 背景特效容器（仅用于粒子 Canvas）---- */
+.bg-effects {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+body {
+    position: relative;
+    min-height: 100vh;
+}
+
+body > .container,
+body > .chat-container,
+body > .language-container,
+body > main {
+    position: relative;
+    z-index: 1;
+}
+
+/* ---- 层 1：大面积渐变光晕（直接画在 body 背景上）---- */
+
+/* 亮色主题：html 提供底色，body 承载浅色光晕渐变 */
+html.light-theme {
+    background: #f5f7fa;
+}
+
+/* 暗色主题（默认）：覆盖子页面 body 实色背景设定 */
+html body {
+    background:
+        /* 层4 底部蓝光 */
+        radial-gradient(ellipse 80% 80% at 90% 80%, rgba(52, 152, 219, 0.50) 0%, transparent 70%),
+        /* 层3 青色光斑 */
+        radial-gradient(ellipse 100% 70% at 50% 70%, rgba(26, 188, 156, 0.55) 0%, transparent 80%),
+        /* 层2 紫色光斑 */
+        radial-gradient(ellipse 90% 90% at 80% 15%, rgba(155, 89, 182, 0.65) 0%, transparent 75%),
+        /* 层1 蓝色光斑 */
+        radial-gradient(ellipse 100% 80% at 10% 35%, rgba(52, 152, 219, 0.75) 0%, transparent 80%),
+        /* 底色 */
+        #2c3e50;
+    background-attachment: fixed;
+}
+.light-theme body {
+    background:
+        radial-gradient(ellipse 80% 80% at 90% 80%, rgba(96, 165, 250, 0.24) 0%, transparent 70%),
+        radial-gradient(ellipse 100% 70% at 50% 70%, rgba(167, 139, 250, 0.30) 0%, transparent 80%),
+        radial-gradient(ellipse 90% 90% at 80% 15%, rgba(147, 197, 253, 0.36) 0%, transparent 75%),
+        radial-gradient(ellipse 100% 80% at 10% 35%, rgba(148, 163, 184, 0.40) 0%, transparent 80%),
+        transparent;
+    background-attachment: fixed;
+}
+
+/* ---- 光晕动画（改用伪元素做 shake 效果）---- */
+.bg-effects::before {
+    content: '';
+    position: absolute;
+    inset: -10%;
+    will-change: transform;
+    /* 第二层色彩叠加（空背景，仅用于 animation 提供视差感） */
+    background: radial-gradient(ellipse 50% 50% at 50% 50%, rgba(255,255,255,0.03) 0%, transparent 100%);
+    animation: bgOrbsDrift 24s ease-in-out infinite,
+               bgOrbsPulse 8s ease-in-out infinite;
+}
+
+@keyframes bgOrbsDrift {
+    0%   { transform: translate(0, 0) rotate(0deg) scale(1); }
+    20%  { transform: translate(-30px, 20px) rotate(1.5deg) scale(1.03); }
+    40%  { transform: translate(15px, -30px) rotate(-1deg) scale(0.98); }
+    60%  { transform: translate(30px, 15px) rotate(0.8deg) scale(1.02); }
+    80%  { transform: translate(-15px, -10px) rotate(-1.5deg) scale(0.99); }
+    100% { transform: translate(0, 0) rotate(0deg) scale(1); }
+}
+
+@keyframes bgOrbsPulse {
+    0%   { opacity: 0.85; }
+    25%  { opacity: 1; }
+    50%  { opacity: 0.75; }
+    75%  { opacity: 0.95; }
+    100% { opacity: 0.85; }
+}
+
+/* ---- 全站卡片/面板透明化，让浮动点阵穿透 ---- */
+/* 仅覆盖结构性表面；按钮、输入框、游戏棋盘、钢琴键和告警状态保留实色反馈。 */
+:where(
+    header,
+    .container,
+    .module-section,
+    .platform-intro,
+    .game-card,
+    .forum-preview,
+    .forum-card,
+    .settings-container,
+    .settings-section,
+    .games-subsection,
+    .language-container,
+    .language-card,
+    .language-stats span,
+    .language-coming-soon,
+    .intro,
+    .book-card,
+    .book-progress,
+    .stats-display,
+    .word-navigation,
+    .ai-panel,
+    .word-card,
+    .ai-output-container,
+    .ai-output-box,
+    .game-container,
+    .game-info,
+    .tetris-info,
+    .game2048-info,
+    .stats,
+    .stat,
+    .stat-item,
+    .game-instructions,
+    .touch-instructions,
+    .touch-hint,
+    .keyboard-info,
+    .touch-guide,
+    .result-content,
+    .music-container,
+    .music-card,
+    .music-exercise,
+    .scale-instructions,
+    .scale-button,
+    .scale-detail,
+    .scale-options,
+    .game-settings,
+    .notes-grid,
+    .melody-display,
+    .user-selection,
+    .melody-play-section,
+    .melody-answer-section,
+    .notes-section,
+    .note-play-section,
+    .rhythm-display,
+    .sheet-display,
+    .audio-settings,
+    .ct-header,
+    .quick-import,
+    .import-card,
+    .character-card,
+    .guide-section,
+    .guide-card,
+    .chat-container,
+    .chat-header,
+    .chat-main,
+    .chat-area,
+    .chat-footer,
+    .messages-container,
+    .welcome-message,
+    .quick-tips,
+    .input-area,
+    .sidebar,
+    .sidebar-header,
+    .sidebar-content,
+    .settings-body,
+    .modal-content,
+    .message.ai .message-bubble,
+    .message:not(.message-user):not(.message-system) .message-bubble,
+    .toolbar,
+    .main-content,
+    .content-area,
+    .toc-sidebar,
+    .upload-box,
+    .file-info,
+    .project-docs-header,
+    .auth-container,
+    .auth-panel,
+    .forum-container,
+    .issues-list,
+    .issue-item,
+    .issue-detail,
+    .comments-section,
+    .comment-item,
+    .comment-form,
+    .profile-container,
+    .admins-list,
+    .repo-info,
+    .gist-sync-status,
+    .blog-card,
+    .empty-tips,
+    .blog-detail,
+    .blog-category-filter,
+    .password-card,
+    .diary-clock,
+    .diary-card,
+    .diary-task-summary,
+    .diary-task-list,
+    .task-item:not(.completed)
+) {
+    background: transparent !important;
+    background-color: transparent !important;
+}
+
+/* ---- 移动端简化 ---- */
+@media (max-width: 768px) {
+    @keyframes bgOrbsDrift {
+        0%   { transform: translate(0, 0) rotate(0deg) scale(1); }
+        20%  { transform: translate(-15px, 10px) rotate(0.8deg) scale(1.015); }
+        40%  { transform: translate(8px, -15px) rotate(-0.5deg) scale(0.99); }
+        60%  { transform: translate(15px, 8px) rotate(0.4deg) scale(1.01); }
+        80%  { transform: translate(-8px, -5px) rotate(-0.8deg) scale(0.995); }
+        100% { transform: translate(0, 0) rotate(0deg) scale(1); }
+    }
+
+    .bg-effects::before {
+        animation-duration: 36s, 12s;
+    }
+}
+
+/* ---- 无障碍：禁用动画 ---- */
+@media (prefers-reduced-motion: reduce) {
+    .bg-effects::before {
+        animation: none;
+    }
+}

@@ -1,0 +1,177 @@
+/* 贪吃蛇游戏样式 */
+
+.snake-container {
+    max-width: 920px;
+    margin: 0 auto;
+    text-align: center;
+    padding: 20px 10px;
+}
+
+@media (min-width: 900px) {
+    .snake-container {
+        display: grid;
+        grid-template-columns: 420px minmax(220px, 260px);
+        grid-template-areas:
+            "board score"
+            "board controls"
+            "rules rules";
+        align-items: start;
+        justify-content: center;
+        gap: 20px 32px;
+        text-align: left;
+    }
+
+    #game {
+        grid-area: board;
+    }
+
+    .score-container {
+        grid-area: score;
+        margin: 0;
+        padding: 18px;
+        border-radius: 10px;
+        box-shadow: 0 4px 12px var(--box-shadow-color);
+    }
+
+    .snake-container .controls {
+        grid-area: controls;
+        flex-direction: column;
+        align-items: stretch;
+        margin: 0;
+    }
+
+    .snake-container .controls button {
+        width: 100%;
+        margin: 0;
+    }
+
+    .snake-container .game-instructions {
+        grid-area: rules;
+    }
+}
+
+/* 游戏画布样式 */
+#game {
+    background-color: var(--snake-board-bg);
+    border-radius: 10px;
+    box-shadow: 0 8px 16px var(--box-shadow-color);
+    margin: 0 auto;
+    display: block;
+    touch-action: none; /* 防止触摸滑动触发页面滚动 */
+}
+
+/* 分数样式 */
+.score-container {
+    font-size: 24px;
+    margin: 20px 0;
+    color: var(--text-color);
+    font-weight: bold;
+}
+
+/* 控制按钮样式 */
+.controls {
+    margin: 20px 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+}
+
+.controls button {
+    margin: 0;
+    padding: 12px 24px;
+    background-color: var(--button-bg);
+    border: none;
+    color: white;
+    font-weight: bold;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 6px var(--box-shadow-color);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.controls button:hover {
+    background-color: var(--button-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 10px var(--box-shadow-color);
+}
+
+.controls button:active {
+    transform: translateY(0);
+}
+
+/* 移动端控制样式 */
+.snake-mobile-controls {
+    display: none;
+    width: 100%;
+    max-width: 300px;
+    margin: 20px auto;
+}
+
+.horizontal-controls {
+    display: flex;
+    justify-content: space-between;
+    margin: 10px 0;
+}
+
+.snake-mobile-controls .mobile-btn {
+    background-color: var(--button-bg);
+    color: white;
+    border: none;
+    width: 60px;
+    height: 60px;
+    border-radius: 8px;
+    font-size: 24px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.snake-mobile-controls .mobile-btn:hover,
+.snake-mobile-controls .mobile-btn:active {
+    background-color: var(--button-hover);
+}
+
+.snake-mobile-controls .horizontal-controls .mobile-btn {
+    width: 80px;
+}
+
+/* 移动设备上显示控制按钮 */
+@media (max-width: 768px) {
+    .snake-mobile-controls {
+        display: block;
+    }
+    
+    #game {
+        width: 300px;
+        height: 300px;
+    }
+    
+    .controls button {
+        width: 80%;
+        margin: 5px 0;
+    }
+}
+
+/* 游戏说明样式 */
+.game-instructions {
+    background-color: var(--card-bg);
+    color: var(--text-color);
+    border-radius: 8px;
+    padding: 20px;
+    margin: 20px auto;
+    max-width: 600px;
+    box-shadow: 0 4px 8px var(--box-shadow-color);
+    text-align: left;
+}
+
+.game-instructions h2,
+.game-instructions h3 {
+    color: var(--primary-color);
+}
+
+.game-instructions ul {
+    list-style-type: disc;
+    margin-left: 20px;
+} 

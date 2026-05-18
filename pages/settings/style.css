@@ -1,0 +1,317 @@
+/**
+ * 设置页面样式
+ */
+@import '../../src/styles/index.css';
+
+.settings-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.settings-section {
+    margin-bottom: 30px;
+    padding: 15px;
+    border-radius: 8px;
+    background-color: var(--container-bg);
+    opacity: 0;
+    transform: translateY(20px);
+    animation: fade-in 0.5s ease forwards;
+}
+
+@keyframes fade-in {
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.settings-section h2 {
+    margin-top: 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--box-shadow-color);
+    color: var(--header-color);
+    font-size: 1.5em;
+}
+
+.setting-item {
+    display: flex;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px dashed var(--box-shadow-color);
+    align-items: center;
+}
+
+.setting-item:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.setting-label {
+    flex: 1;
+    min-width: 200px;
+    margin-right: 15px;
+    color: var(--text-color);
+    font-weight: bold;
+}
+
+.setting-control {
+    flex: 2;
+    min-width: 200px;
+    transition: all 0.3s ease;
+}
+
+.setting-control input[type="range"] {
+    width: 70%;
+    margin-right: 10px;
+    vertical-align: middle;
+}
+
+.setting-control input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+.setting-control select {
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--box-shadow-color);
+    background-color: var(--forum-input-bg);
+    color: var(--text-color);
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.setting-control select:hover {
+    border-color: var(--primary-color);
+}
+
+.setting-control select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px var(--primary-color-transparent);
+}
+
+.setting-description {
+    flex-basis: 100%;
+    margin-top: 8px;
+    font-size: 0.85em;
+    color: var(--text-color);
+    opacity: 0.7;
+    padding-left: 200px;
+}
+
+.range-display {
+    display: inline-block;
+    width: 40px;
+    text-align: center;
+    color: var(--text-color);
+    font-weight: bold;
+    vertical-align: middle;
+}
+
+.buttons-container {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 30px;
+    padding-top: 20px;
+    border-top: 1px solid var(--box-shadow-color);
+}
+
+.buttons-container button {
+    padding: 10px 25px;
+    border: none;
+    border-radius: 4px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+#save-settings {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+#save-settings:hover {
+    background-color: var(--button-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px var(--box-shadow-color);
+}
+
+#reset-settings {
+    background-color: var(--accent-color);
+    color: white;
+}
+
+#reset-settings:hover {
+    background-color: var(--accent-color);
+    opacity: 0.8;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px var(--box-shadow-color);
+}
+
+/* 设置选项卡 */
+.settings-tabs {
+    display: flex;
+    border-bottom: 2px solid var(--box-shadow-color);
+    margin-bottom: 25px;
+    overflow-x: auto;
+    padding-bottom: 1px;
+    white-space: nowrap;
+}
+
+.settings-tabs .tab-button {
+    padding: 10px 20px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: bold;
+    color: var(--text-color);
+    position: relative;
+    transition: all 0.3s ease;
+    margin: 0 2px;
+}
+
+.settings-tabs .tab-button:hover {
+    color: var(--primary-color);
+}
+
+.settings-tabs .tab-button.active {
+    color: var(--primary-color);
+}
+
+.settings-tabs .tab-button.active::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    background-color: var(--primary-color);
+}
+
+.settings-section {
+    display: none;
+}
+
+.settings-section.active {
+    display: block;
+}
+
+/* 游戏子选项卡 */
+.games-subtabs {
+    display: flex;
+    flex-wrap: wrap;
+    margin: 15px 0;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--box-shadow-color);
+}
+
+.subtab-button {
+    background: none;
+    border: none;
+    padding: 8px 15px;
+    margin-right: 5px;
+    margin-bottom: 5px;
+    border-radius: 5px;
+    cursor: pointer;
+    color: var(--text-color);
+    transition: all 0.2s;
+}
+
+.subtab-button.active {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.games-subsection {
+    display: none;
+    padding-top: 10px;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.games-subsection.active {
+    display: block;
+    opacity: 1;
+}
+
+.games-subsection h3 {
+    margin-top: 0;
+    color: var(--header-color);
+}
+
+/* 通知 */
+.settings-notification {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background-color: var(--primary-color);
+    color: white;
+    padding: 12px 25px;
+    border-radius: 5px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    z-index: 1000;
+    opacity: 0;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+    font-weight: bold;
+}
+
+.settings-notification.show {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+}
+
+/* 高对比度模式 */
+.high-contrast {
+    --text-color: #ffffff;
+    --bg-color: #000000;
+    --container-bg: #1a1a1a;
+    --card-bg: #1a1a1a;
+    --header-color: #ffffff;
+    --primary-color: #ff9500;
+    --secondary-color: #ff3b30;
+    --link-color: #ff9500;
+    --link-hover: #ff3b30;
+    --button-bg: #ff9500;
+    --button-hover: #ff3b30;
+    --box-shadow-color: rgba(0, 0, 0, 0.5);
+}
+
+/* 响应式 */
+@media (max-width: 600px) {
+    .setting-label, .setting-control {
+        flex-basis: 100%;
+        min-width: 100%;
+        margin-right: 0;
+    }
+
+    .setting-description {
+        margin-left: 0;
+        padding-left: 0;
+    }
+
+    .buttons-container {
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .buttons-container button {
+        width: 100%;
+    }
+
+    .settings-tabs {
+        justify-content: space-between;
+        padding-bottom: 5px;
+    }
+
+    .settings-tabs .tab-button {
+        font-size: 14px;
+        padding: 8px 10px;
+    }
+}

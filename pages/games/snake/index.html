@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>贪吃蛇游戏 - 网页游戏</title>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>贪吃蛇游戏</h1>
+            <nav>
+                <ul>
+                    <li><a href="../../../index.html#games">← 返回</a></li>
+                    <li><a href="../../settings/">设置</a></li>
+                </ul>
+            </nav>
+        </header>
+
+        <div class="game-container snake-container">
+            <div class="score-container">
+                <span>得分: </span>
+                <span id="score">0</span>
+            </div>
+
+            <canvas id="game" width="400" height="400"></canvas>
+
+            <div class="controls">
+                <button id="start-btn">开始游戏</button>
+                <button id="reset-btn">重新开始</button>
+            </div>
+
+            <div class="game-instructions">
+                <h2>游戏规则</h2>
+                <p>控制蛇吃掉食物来获得分数，随着蛇身变长，游戏难度增加。碰到墙壁或自身会导致游戏结束。</p>
+
+                <h3>控制方式:</h3>
+                <ul>
+                    <li>电脑端：方向键或WASD键控制移动方向</li>
+                    <li>移动端：在游戏区域上、下、左、右滑动控制方向</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+</body>
+</html>

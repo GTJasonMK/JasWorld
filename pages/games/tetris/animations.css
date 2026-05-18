@@ -1,0 +1,73 @@
+/**
+ * 俄罗斯方块游戏专用动画和样式
+ */
+
+/* ========== 方块消除动画 ========== */
+@keyframes lineClearEffect {
+    0% {
+        transform: scale(1);
+        filter: brightness(1);
+    }
+    50% {
+        transform: scale(1.1);
+        filter: brightness(1.5);
+    }
+    100% {
+        transform: scale(1);
+        filter: brightness(1);
+    }
+}
+
+/* ========== 特殊方块闪光动画 ========== */
+@keyframes specialBlockGlow {
+    0% {
+        filter: brightness(1);
+    }
+    50% {
+        filter: brightness(1.5) drop-shadow(0 0 5px gold);
+    }
+    100% {
+        filter: brightness(1);
+    }
+}
+
+/* ========== 能力系统相关样式 ========== */
+.abilities-container {
+    margin-top: 20px;
+    text-align: center;
+    width: 100%;
+}
+
+.abilities-list {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.ability-button {
+    padding: 8px 12px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.3s;
+}
+
+.ability-button:hover {
+    background-color: #45a049;
+    transform: scale(1.05);
+}
+
+.ability-effect {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 50;
+}

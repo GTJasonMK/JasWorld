@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>日语词汇练习</title>
+</head>
+<body>
+    <div class="container">
+        <!-- 设置按钮 -->
+        <a href="../../settings/" class="settings-link" title="设置">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+        </a>
+
+        <!-- 选择词汇书视图 -->
+        <div id="select-view" class="view active">
+            <header>
+                <h1>日语词汇练习</h1>
+                <a href="../index.html" class="back-link">返回语言选择</a>
+            </header>
+
+            <div class="intro">
+                <p>选择一本词汇书开始练习，通过"认识/不认识"的判断来检验和巩固你的词汇量。</p>
+                <p class="notice" style="color: var(--primary-color); margin-top: 16px;">暂无可用词库，请添加词库文件到wordlists/目录。</p>
+            </div>
+
+            <div id="book-list" class="book-list">
+                <!-- 词汇书列表将通过JS动态生成 -->
+            </div>
+
+            <div id="loading" class="loading" style="display: none;">
+                <p>加载中...</p>
+            </div>
+        </div>
+
+        <!-- 练习视图 -->
+        <div id="practice-view" class="view">
+            <!-- 顶部控制区 -->
+            <div class="top-controls">
+                <!-- 左侧面板：退出按钮和统计 -->
+                <div class="left-panel">
+                    <button id="exit-btn" class="exit-btn" title="退出练习">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M19 12H5M12 19l-7-7 7-7"/>
+                        </svg>
+                        <span>退出</span>
+                    </button>
+                    <div id="stats-display" class="stats-display">
+                        <span class="stats-label">已认识:</span>
+                        <span id="stats-text" class="stats-text">0/0</span>
+                        <span id="stats-percent" class="stats-percent">(0%)</span>
+                    </div>
+                    <!-- 单词导航 -->
+                    <div class="word-navigation">
+                        <button id="word-nav-prev" class="word-nav-btn" title="上一个单词" disabled>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M15 18l-6-6 6-6"/>
+                            </svg>
+                        </button>
+                        <span id="word-position" class="word-position">--</span>
+                        <button id="word-nav-next" class="word-nav-btn" title="下一个单词" disabled>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M9 18l6-6-6-6"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 右侧AI助手面板 -->
+                <div class="ai-panel">
+                    <div class="ai-panel-header">
+                        <span>AI助手</span>
+                        <button class="ai-config-btn" id="ai-config-btn" title="配置AI服务">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="3"></circle>
+                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    <button class="ai-btn" data-type="synonyms" title="查询相近释义和区别">
+                        <span class="ai-btn-icon">📖</span>
+                        <span class="ai-btn-text">相近释义及区别</span>
+                    </button>
+                    <button class="ai-btn" data-type="phrases" title="查询常用短语和用法">
+                        <span class="ai-btn-icon">💡</span>
+                        <span class="ai-btn-text">短语及用法</span>
+                    </button>
+                    <div class="custom-question-group">
+                        <input type="text" id="custom-question-input" class="custom-question-input" placeholder="输入关于当前单词的问题...">
+                        <button id="custom-question-btn" class="custom-question-btn" title="发送自定义问题">
+                            <span>发送</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 主练习内容区：左侧单词卡片，右侧AI输出 -->
+            <div class="practice-content">
+                <!-- 左侧：单词学习区域 -->
+                <div class="word-section">
+                    <!-- 单词卡片 -->
+                    <div class="word-card-container">
+                        <div id="word-card" class="word-card">
+                            <div id="word-text" class="word-text">Loading...</div>
+                            <div id="phonetic-text" class="phonetic-text"></div>
+                            <div id="definition-text" class="definition-text" style="display: none;"></div>
+                        </div>
+                    </div>
+
+                    <!-- 控制按钮 -->
+                    <div class="control-buttons">
+                        <button id="know-btn" class="control-btn know-btn">认识</button>
+                        <button id="unknown-btn" class="control-btn unknown-btn">不认识</button>
+                        <button id="next-btn" class="control-btn next-btn" style="display: none;">下一个</button>
+                    </div>
+
+                    <!-- 进度提示 -->
+                    <div id="practice-hint" class="practice-hint">
+                        <p>看到单词后，快速判断是否认识它的意思</p>
+                    </div>
+                </div>
+
+                <!-- 右侧：AI输出容器 -->
+                <div id="ai-output-container" class="ai-output-container" style="display: none;">
+                    <div class="ai-output-wrapper">
+                        <div class="ai-output-header">
+                            <div class="ai-output-title">
+                                <span id="ai-output-label" class="ai-output-label"></span>
+                            </div>
+                            <div class="ai-nav-controls">
+                                <button id="ai-nav-prev" class="ai-nav-btn" title="上一条回复" disabled>
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M15 18l-6-6 6-6"/>
+                                    </svg>
+                                </button>
+                                <span id="ai-response-index" class="ai-response-index">0/0</span>
+                                <button id="ai-nav-next" class="ai-nav-btn" title="下一条回复" disabled>
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M9 18l6-6-6-6"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="ai-output-box" class="ai-output-box">
+                            <div class="ai-placeholder">点击上方按钮开始使用AI助手</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+</body>
+</html>

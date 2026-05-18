@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>2048 - 网页游戏</title>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>2048</h1>
+            <nav>
+                <ul>
+                    <li><a href="../../../index.html#games">← 返回</a></li>
+                    <li><a href="../../settings/">设置</a></li>
+                </ul>
+            </nav>
+        </header>
+
+        <main>
+            <div class="game2048-container">
+                <div class="touch-instructions">
+                    <p>向左、右、上、下滑动来移动方块，合并相同数字获得更高分!</p>
+                </div>
+
+                <div class="game-area">
+                    <div class="game2048-board" id="game2048-board">
+                        <!-- 格子将通过JavaScript动态创建 -->
+                    </div>
+
+                    <div class="game2048-info">
+                        <div class="stats">
+                            <h3>游戏统计</h3>
+                            <div class="stat-item">
+                                <span>分数:</span>
+                                <span id="score">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span>最高分:</span>
+                                <span id="best-score">0</span>
+                            </div>
+                        </div>
+
+                        <div class="controls">
+                            <button id="start-btn">新游戏</button>
+                            <button id="undo-btn">撤销</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="game-instructions">
+                    <h2>游戏规则</h2>
+                    <p>移动并合并相同数字的方块，达到2048赢得游戏！</p>
+
+                    <h3>控制方式:</h3>
+                    <ul>
+                        <li>← → ↑ ↓ : 移动方块</li>
+                        <li>R : 重新开始</li>
+                        <li>Z : 撤销上一步</li>
+                        <li>移动设备: 在游戏区域上、下、左、右滑动控制方向</li>
+                    </ul>
+                </div>
+
+                <div id="game-over" class="game-over-overlay">
+                    <h2>游戏结束!</h2>
+                    <p>您的得分: <span id="final-score">0</span></p>
+                    <button id="restart-btn">再来一次</button>
+                </div>
+
+                <div id="game-win" class="game-win-overlay">
+                    <h2>恭喜获胜!</h2>
+                    <p>您的得分: <span id="win-score">0</span></p>
+                    <p>您已经到达2048!</p>
+                    <button id="continue-btn">继续游戏</button>
+                    <button id="new-game-btn">新游戏</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+</body>
+</html>

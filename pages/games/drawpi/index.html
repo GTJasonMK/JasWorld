@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>画圆测π - 多功能娱乐平台</title>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>画圆测π</h1>
+            <nav>
+                <ul>
+                    <li><a href="../../../index.html#games">← 返回</a></li>
+                    <li><a href="../../settings/">设置</a></li>
+                </ul>
+            </nav>
+        </header>
+
+        <main>
+            <div class="game-container">
+                <div class="game-info">
+                    <p>在下方区域画一个圆，尽量画得圆一些。让线条交叉即可形成闭合图形，系统会计算您画的圆的π值。越接近π，说明您画的圆越圆！</p>
+                    <div class="stats">
+                        <div class="stat highlight">
+                            <span class="label">π值:</span>
+                            <span id="pi-value">-</span>
+                        </div>
+                        <div class="stat">
+                            <span class="label">精确度:</span>
+                            <span id="accuracy">-</span>
+                        </div>
+                    </div>
+
+                    <div class="circle-quality">
+                        <div class="quality-meter">
+                            <div class="meter-fill" id="quality-meter-fill"></div>
+                        </div>
+                        <div class="quality-label" id="quality-label">画一个圆看看你的水平</div>
+                    </div>
+
+                    <div class="circle-rank">
+                        <div class="rank-badge" id="rank-badge">
+                            <div class="rank-icon">?</div>
+                            <div class="rank-title">未评级</div>
+                        </div>
+                        <div class="rank-stats">
+                            <div class="rank-score">
+                                <span>当前等级: </span><span id="current-rank">未评级</span>
+                            </div>
+                            <div class="rank-best">
+                                <span>最高等级: </span><span id="best-rank">未评级</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="message" id="message">开始画圆</div>
+                    <div class="actions">
+                        <button id="clear-btn" class="primary-button">清除</button>
+                        <button id="calculate-btn" class="primary-button">计算</button>
+                    </div>
+                </div>
+
+                <div class="canvas-container">
+                    <canvas id="drawing-canvas"></canvas>
+                    <div class="guide-circle"></div>
+                    <div class="draw-hint">开始画圆自动清除，线条交叉自动计算</div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+</body>
+</html>

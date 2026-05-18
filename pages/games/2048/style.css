@@ -1,0 +1,321 @@
+/* 2048游戏样式 */
+.game2048-container {
+    max-width: 760px;
+    margin: 0 auto;
+    text-align: center;
+}
+
+.game-area {
+    display: grid;
+    grid-template-columns: 300px minmax(210px, 240px);
+    align-items: center;
+    justify-content: center;
+    gap: 28px;
+    margin-bottom: 20px;
+}
+
+.game2048-board {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(4, 1fr);
+    gap: 10px;
+    padding: 10px;
+    background-color: var(--game2048-board-bg);
+    border-radius: 12px;
+    width: 300px;
+    height: 300px;
+    margin: 0 auto;
+    box-shadow: 0 8px 15px var(--box-shadow-color);
+    transition: all 0.3s ease;
+    touch-action: none; /* 防止触摸滑动触发页面滚动 */
+}
+
+/* 移动端优化 */
+@media (max-width: 480px) {
+    .game2048-board {
+        width: 280px;
+        height: 280px;
+        gap: 8px;
+        padding: 8px;
+    }
+}
+
+.game2048-cell {
+    background-color: var(--game2048-cell-bg);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    font-weight: bold;
+    color: #776e65;
+    width: 100%;
+    height: 100%;
+    transition: all 0.2s ease-in-out;
+    position: relative;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+.game2048-cell-2 { background-color: #eee4da; }
+.game2048-cell-4 { background-color: #ede0c8; }
+.game2048-cell-8 { background-color: #f2b179; color: white; }
+.game2048-cell-16 { background-color: #f59563; color: white; }
+.game2048-cell-32 { background-color: #f67c5f; color: white; }
+.game2048-cell-64 { background-color: #f65e3b; color: white; }
+.game2048-cell-128 { 
+    background-color: #edcf72; 
+    color: white; 
+    font-size: 26px;
+    box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.2381), inset 0 0 0 1px rgba(255, 255, 255, 0.14286);
+}
+.game2048-cell-256 { 
+    background-color: #edcc61; 
+    color: white; 
+    font-size: 26px;
+    box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.31746), inset 0 0 0 1px rgba(255, 255, 255, 0.19048);
+}
+.game2048-cell-512 { 
+    background-color: #edc850; 
+    color: white; 
+    font-size: 26px;
+    box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.39683), inset 0 0 0 1px rgba(255, 255, 255, 0.2381);
+}
+.game2048-cell-1024 { 
+    background-color: #edc53f; 
+    color: white; 
+    font-size: 20px;
+    box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.47619), inset 0 0 0 1px rgba(255, 255, 255, 0.28571);
+}
+.game2048-cell-2048 { 
+    background-color: #edc22e; 
+    color: white; 
+    font-size: 20px;
+    box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.55556), inset 0 0 0 1px rgba(255, 255, 255, 0.33333);
+}
+.game2048-cell-super {
+    background-color: #3c3a32;
+    color: white;
+    font-size: 16px;
+}
+
+/* 移动端字体大小优化 */
+@media (max-width: 480px) {
+    .game2048-cell {
+        font-size: 24px;
+    }
+    
+    .game2048-cell-128, .game2048-cell-256, .game2048-cell-512 {
+        font-size: 22px;
+    }
+    
+    .game2048-cell-1024, .game2048-cell-2048 {
+        font-size: 18px;
+    }
+    
+    .game2048-cell-super {
+        font-size: 14px;
+    }
+}
+
+.game2048-cell.merged {
+    animation: pop 0.2s ease-in-out;
+}
+
+.game2048-cell.new {
+    animation: appear 0.2s ease-in-out;
+}
+
+@keyframes pop {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); }
+}
+
+@keyframes appear {
+    0% { opacity: 0; transform: scale(0); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
+.game2048-info {
+    width: 100%;
+    margin: 0;
+}
+
+.game2048-info .controls {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin: 16px 0 0;
+}
+
+.game2048-info .controls button {
+    width: 100%;
+    margin: 0;
+}
+
+.stats {
+    background-color: var(--card-bg);
+    color: var(--text-color);
+    border-radius: 8px;
+    padding: 10px 20px;
+    margin-bottom: 10px;
+    box-shadow: 0 4px 8px var(--box-shadow-color);
+}
+
+.stat-item {
+    display: flex;
+    justify-content: space-between;
+    margin: 10px 0;
+    font-size: 18px;
+}
+
+.controls {
+    margin: 20px 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.controls button {
+    margin: 0 10px;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 6px;
+    background-color: var(--game2048-button-bg);
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.1s;
+    box-shadow: 0 4px 6px var(--box-shadow-color);
+}
+
+.controls button:hover {
+    background-color: var(--game2048-button-hover);
+    transform: translateY(-2px);
+}
+
+.controls button:active {
+    transform: translateY(0);
+}
+
+@media (max-width: 480px) {
+    .game2048-container {
+        max-width: 100%;
+    }
+
+    .game-area {
+        grid-template-columns: 1fr;
+        gap: 18px;
+    }
+
+    .game2048-info {
+        max-width: 300px;
+        margin: 0 auto;
+    }
+
+    .controls {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .controls button {
+        width: 80%;
+        margin: 5px 0;
+    }
+}
+
+.game-over-overlay, .game-win-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+}
+
+.game-over-overlay h2, .game-win-overlay h2 {
+    color: white;
+    font-size: 36px;
+    margin-bottom: 20px;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.game-over-overlay p, .game-win-overlay p {
+    color: white;
+    font-size: 24px;
+    margin-bottom: 30px;
+}
+
+.game-over-overlay button, .game-win-overlay button {
+    font-size: 20px;
+    padding: 15px 30px;
+    margin: 10px;
+    border: none;
+    border-radius: 6px;
+    background-color: var(--game2048-button-bg);
+    color: white;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.game-over-overlay button:hover, .game-win-overlay button:hover {
+    background-color: var(--game2048-button-hover);
+    transform: translateY(-2px);
+}
+
+/* 移动端虚拟按键自定义样式 */
+.mobile-controls {
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 12px;
+    background-color: rgba(187, 173, 160, 0.3);
+    padding: 15px;
+    border-radius: 12px;
+    margin-top: 25px;
+}
+
+.mobile-btn {
+    background-color: var(--game2048-button-bg);
+    color: white;
+    font-weight: bold;
+}
+
+.mobile-btn:active {
+    background-color: var(--game2048-button-hover);
+}
+
+/* 游戏说明区域 */
+.game-instructions {
+    background-color: var(--card-bg);
+    color: var(--text-color);
+    border-radius: 8px;
+    padding: 20px;
+    margin: 20px auto;
+    max-width: 600px;
+    box-shadow: 0 4px 8px var(--box-shadow-color);
+    text-align: left;
+}
+
+.game-instructions h2,
+.game-instructions h3 {
+    color: var(--primary-color);
+}
+
+.game-instructions ul {
+    list-style-type: disc;
+    margin-left: 20px;
+}
+
+.touch-instructions {
+    background-color: var(--card-bg);
+    color: var(--text-color);
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 15px;
+    box-shadow: 0 2px 6px var(--box-shadow-color);
+} 

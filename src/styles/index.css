@@ -1,0 +1,11 @@
+/**
+ * styles 聚合入口
+ *
+ * 业务模块 import '@styles/index.css' 即可获得全局基础样式。
+ */
+
+@import './theme.css';
+@import './base.css';
+@import './controls.css';
+@import './breakpoints.css';
+@import './effects.css';

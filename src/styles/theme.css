@@ -1,0 +1,277 @@
+/* 主题颜色系统 */
+:root {
+    /* 深色主题为默认 */
+    --bg-color: #2c3e50;
+    --container-bg: #34495e;
+    --primary-color: #3498db;
+    --secondary-color: #2ecc71;
+    --text-color: #ecf0f1;
+    --header-color: #ffffff;
+    --link-color: #3498db;
+    --link-hover: #1abc9c;
+    --button-bg: #3498db;
+    --button-hover: #2980b9;
+    --card-bg: #34495e;
+    --box-shadow-color: rgba(0, 0, 0, 0.2);
+    --control-border: rgba(236, 240, 241, 0.22);
+    --scrollbar-track: rgba(236, 240, 241, 0.08);
+    --scrollbar-thumb: rgba(52, 152, 219, 0.78);
+    --scrollbar-thumb-hover: rgba(46, 204, 113, 0.90);
+    --range-track: rgba(236, 240, 241, 0.16);
+    --range-fill-start: #3498db;
+    --range-fill-end: #2ecc71;
+    --range-thumb-bg: #ecf0f1;
+    --range-thumb-border: #2ecc71;
+    --range-focus-ring: rgba(46, 204, 113, 0.28);
+    
+    /* 半透明颜色变量 */
+    --primary-color-transparent: rgba(52, 152, 219, 0.3);
+    --secondary-color-transparent: rgba(46, 204, 113, 0.3);
+    --accent-color: #e74c3c;
+    --accent-color-transparent: rgba(231, 76, 60, 0.3);
+    
+    /* 游戏特定颜色 */
+    --tetris-board-bg: #333;
+    --tetris-board-border: #555;
+    --tetris-cell-bg: #1a1a1a;
+    --tetris-stats-bg: #444;
+    --tetris-button-bg: #72c3dc;
+    --tetris-button-hover: #5da8c0;
+    
+    --game2048-board-bg: #bbada0;
+    --game2048-cell-bg: #cdc1b4;
+    --game2048-button-bg: #8f7a66;
+    --game2048-button-hover: #9f8b77;
+    
+    --snake-board-bg: #333;
+    --snake-food: #e74c3c;
+    --snake-body: #3498db;
+    
+    /* 音乐模块特定颜色 */
+    --music-card-bg: #2c3e50;
+    --music-card-active: #3498db;
+    --note-correct: #2ecc71;
+    --note-incorrect: #e74c3c;
+    --piano-white-key: #ffffff;
+    --piano-black-key: #1a1a1a;
+    
+    /* 论坛模块特定颜色 */
+    --forum-container-bg: #34495e;
+    --forum-card-bg: #2c3e50;
+    --forum-input-bg: #34495e;
+    --forum-issue-label-game: rgba(52, 152, 219, 0.3);
+    --forum-issue-label-music: rgba(46, 204, 113, 0.3);
+    --forum-issue-label-problem: rgba(231, 76, 60, 0.3);
+    --forum-issue-label-suggestion: rgba(255, 193, 7, 0.3);
+}
+
+/* 明亮主题 */
+.light-theme {
+    --bg-color: #f5f7fa;
+    --container-bg: #ffffff;
+    --primary-color: #3498db;
+    --secondary-color: #2ecc71;
+    --text-color: #333333;
+    --header-color: #2c3e50;
+    --link-color: #3498db;
+    --link-hover: #1abc9c;
+    --button-bg: #3498db;
+    --button-hover: #2980b9;
+    --card-bg: #ffffff;
+    --box-shadow-color: rgba(0, 0, 0, 0.1);
+    --control-border: rgba(44, 62, 80, 0.18);
+    --scrollbar-track: rgba(44, 62, 80, 0.10);
+    --scrollbar-thumb: rgba(52, 152, 219, 0.72);
+    --scrollbar-thumb-hover: rgba(26, 188, 156, 0.86);
+    --range-track: rgba(44, 62, 80, 0.14);
+    --range-fill-start: #3498db;
+    --range-fill-end: #1abc9c;
+    --range-thumb-bg: #ffffff;
+    --range-thumb-border: #3498db;
+    --range-focus-ring: rgba(52, 152, 219, 0.22);
+    
+    /* 半透明颜色变量 */
+    --primary-color-transparent: rgba(52, 152, 219, 0.2);
+    --secondary-color-transparent: rgba(46, 204, 113, 0.2);
+    --accent-color: #e74c3c;
+    --accent-color-transparent: rgba(231, 76, 60, 0.2);
+    
+    /* 游戏特定颜色 */
+    --tetris-board-bg: #e5e5e5;
+    --tetris-board-border: #bbbbbb;
+    --tetris-cell-bg: #f5f5f5;
+    --tetris-stats-bg: #f0f0f0;
+    --tetris-button-bg: #72c3dc;
+    --tetris-button-hover: #5da8c0;
+    
+    --game2048-board-bg: #bbada0;
+    --game2048-cell-bg: #cdc1b4;
+    --game2048-button-bg: #8f7a66;
+    --game2048-button-hover: #9f8b77;
+    
+    --snake-board-bg: #e5e5e5;
+    --snake-food: #e74c3c;
+    --snake-body: #3498db;
+    
+    /* 音乐模块特定颜色 */
+    --music-card-bg: #f0f0f0;
+    --music-card-active: #3498db;
+    --note-correct: #2ecc71;
+    --note-incorrect: #e74c3c;
+    --piano-white-key: #ffffff;
+    --piano-black-key: #1a1a1a;
+    
+    /* 论坛模块特定颜色 */
+    --forum-container-bg: #f5f5f5;
+    --forum-card-bg: #ffffff;
+    --forum-input-bg: #ffffff;
+    --forum-issue-label-game: rgba(52, 152, 219, 0.2);
+    --forum-issue-label-music: rgba(46, 204, 113, 0.2);
+    --forum-issue-label-problem: rgba(231, 76, 60, 0.2);
+    --forum-issue-label-suggestion: rgba(255, 193, 7, 0.2);
+}
+
+/* 主题切换按钮样式 */
+.theme-toggle {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background-color: var(--button-bg);
+    color: #ffffff;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 4px 8px var(--box-shadow-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    z-index: 1000;
+    transition: all 0.3s ease;
+}
+
+.theme-toggle:hover {
+    transform: scale(1.1);
+    background-color: var(--button-hover);
+}
+
+body > .chat-container ~ .theme-toggle {
+    bottom: calc(120px + env(safe-area-inset-bottom));
+}
+
+/* 媒体查询适配移动设备 */
+@media (max-width: 768px) {
+    .theme-toggle {
+        /* 保持44x44px最小触摸目标 */
+        width: 44px;
+        height: 44px;
+        bottom: 10px;
+        right: 10px;
+        font-size: 18px;
+    }
+
+    body > .chat-container ~ .theme-toggle {
+        bottom: calc(116px + env(safe-area-inset-bottom));
+    }
+}
+
+/* ========== 移动端触摸优化 ========== */
+/* 确保所有可交互元素符合最小触摸区域标准 */
+@media (max-width: 768px) {
+    /* 全局按钮最小尺寸 - Apple和Google推荐标准 */
+    button,
+    .btn,
+    .button,
+    a.button,
+    input[type="button"],
+    input[type="submit"],
+    input[type="reset"],
+    [role="button"] {
+        min-height: 44px;
+        min-width: 44px;
+    }
+
+    /* 链接最小点击区域（如果显示为按钮样式） */
+    a.btn,
+    a.button,
+    .btn-link {
+        min-height: 44px;
+        min-width: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* 表单控件最小尺寸 */
+    input[type="checkbox"],
+    input[type="radio"] {
+        min-width: 24px;
+        min-height: 24px;
+    }
+
+    /* Select下拉框 */
+    select {
+        min-height: 44px;
+        padding: 8px 12px;
+    }
+
+    /* 文本输入框 */
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="search"],
+    input[type="tel"],
+    input[type="url"],
+    input[type="number"],
+    textarea {
+        min-height: 44px;
+        padding: 10px 12px;
+        font-size: 16px; /* 防止iOS自动缩放 */
+    }
+
+    /* 触摸目标间距 - 至少8px */
+    .btn-group > button,
+    .btn-group > .btn,
+    .button-group > button,
+    .button-group > .btn {
+        margin: 4px;
+    }
+
+    /* 确保图标按钮有足够的点击区域 */
+    .icon-btn,
+    .icon-button,
+    button.icon {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 10px;
+    }
+}
+
+/* 触摸设备专用优化 */
+@media (hover: none) and (pointer: coarse) {
+    /* 触摸设备上所有可点击元素增加点击区域 */
+    button,
+    .btn,
+    a.button,
+    [role="button"] {
+        padding: 12px 16px;
+    }
+
+    /* 增强触摸反馈 */
+    button:active,
+    .btn:active,
+    a.button:active {
+        transform: scale(0.98);
+        opacity: 0.9;
+    }
+
+    /* 移除hover效果，避免点击后残留 */
+    button:hover,
+    .btn:hover,
+    a:hover {
+        /* 触摸设备不应用hover样式 */
+        transform: none;
+    }
+} 

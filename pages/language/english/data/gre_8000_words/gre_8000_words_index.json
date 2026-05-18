@@ -1,0 +1,130 @@
+{
+  "version": "1.0",
+  "bookId": "gre_8000_words",
+  "language": "english",
+  "totalWords": 7732,
+  "totalParts": 10,
+  "generated": "2025-11-10T16:59:23.366Z",
+  "parts": [
+    {
+      "partId": 1,
+      "wordlistFile": "wordlists/gre_8000_words/part1.txt",
+      "outputFile": "data/gre_8000_words/gre_8000_words_pregenerated_part1.json",
+      "wordCount": 774,
+      "wordRange": {
+        "start": 1,
+        "end": 774,
+        "firstWord": "abandon",
+        "lastWord": "canine"
+      }
+    },
+    {
+      "partId": 2,
+      "wordlistFile": "wordlists/gre_8000_words/part2.txt",
+      "outputFile": "data/gre_8000_words/gre_8000_words_pregenerated_part2.json",
+      "wordCount": 774,
+      "wordRange": {
+        "start": 775,
+        "end": 1548,
+        "firstWord": "canny",
+        "lastWord": "desirable"
+      }
+    },
+    {
+      "partId": 3,
+      "wordlistFile": "wordlists/gre_8000_words/part3.txt",
+      "outputFile": "data/gre_8000_words/gre_8000_words_pregenerated_part3.json",
+      "wordCount": 774,
+      "wordRange": {
+        "start": 1549,
+        "end": 2322,
+        "firstWord": "desperate",
+        "lastWord": "flux"
+      }
+    },
+    {
+      "partId": 4,
+      "wordlistFile": "wordlists/gre_8000_words/part4.txt",
+      "outputFile": "data/gre_8000_words/gre_8000_words_pregenerated_part4.json",
+      "wordCount": 774,
+      "wordRange": {
+        "start": 2323,
+        "end": 3096,
+        "firstWord": "foible",
+        "lastWord": "insolvency"
+      }
+    },
+    {
+      "partId": 5,
+      "wordlistFile": "wordlists/gre_8000_words/part5.txt",
+      "outputFile": "data/gre_8000_words/gre_8000_words_pregenerated_part5.json",
+      "wordCount": 774,
+      "wordRange": {
+        "start": 3097,
+        "end": 3870,
+        "firstWord": "insomnia",
+        "lastWord": "oblivious"
+      }
+    },
+    {
+      "partId": 6,
+      "wordlistFile": "wordlists/gre_8000_words/part6.txt",
+      "outputFile": "data/gre_8000_words/gre_8000_words_pregenerated_part6.json",
+      "wordCount": 774,
+      "wordRange": {
+        "start": 3871,
+        "end": 4644,
+        "firstWord": "obloquy",
+        "lastWord": "raucous"
+      }
+    },
+    {
+      "partId": 7,
+      "wordlistFile": "wordlists/gre_8000_words/part7.txt",
+      "outputFile": "data/gre_8000_words/gre_8000_words_pregenerated_part7.json",
+      "wordCount": 774,
+      "wordRange": {
+        "start": 4645,
+        "end": 5418,
+        "firstWord": "ravage",
+        "lastWord": "straightforward"
+      }
+    },
+    {
+      "partId": 8,
+      "wordlistFile": "wordlists/gre_8000_words/part8.txt",
+      "outputFile": "data/gre_8000_words/gre_8000_words_pregenerated_part8.json",
+      "wordCount": 774,
+      "wordRange": {
+        "start": 5419,
+        "end": 6192,
+        "firstWord": "strait",
+        "lastWord": "abstinent"
+      }
+    },
+    {
+      "partId": 9,
+      "wordlistFile": "wordlists/gre_8000_words/part9.txt",
+      "outputFile": "data/gre_8000_words/gre_8000_words_pregenerated_part9.json",
+      "wordCount": 774,
+      "wordRange": {
+        "start": 6193,
+        "end": 6966,
+        "firstWord": "acarpous",
+        "lastWord": "neurosis"
+      }
+    },
+    {
+      "partId": 10,
+      "wordlistFile": "wordlists/gre_8000_words/part10.txt",
+      "outputFile": "data/gre_8000_words/gre_8000_words_pregenerated_part10.json",
+      "wordCount": 766,
+      "wordRange": {
+        "start": 6967,
+        "end": 7732,
+        "firstWord": "niche",
+        "lastWord": "zoom"
+      }
+    }
+  ]
+}

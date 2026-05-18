@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>光阴的游乐场</title>
+</head>
+<body>
+    <div class="container">
+        <a href="pages/settings/" class="settings-link" title="设置">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+        </a>
+
+        <header>
+            <h1>光阴的游乐场</h1>
+            <nav>
+                <ul>
+                    <li><a href="#games" class="active">游戏时光</a></li>
+                    <li><a href="#aitools">智慧对话</a></li>
+                    <li><a href="#language">言语习得</a></li>
+                    <li><a href="#music">琴键之旅</a></li>
+                    <li><a href="#forum">社区广场</a></li>
+                </ul>
+            </nav>
+        </header>
+
+        <div class="platform-intro">
+            <h2>欢迎你，旅人</h2>
+            <p>这里是一片宁静的天地，藏着童年的游戏、智慧的对话、语言的韵律和音乐的流转。在这里，时光变得温柔而缓慢，你可以停下脚步，寻回那些被遗忘在岁月里的美好片段。</p>
+        </div>
+
+        <!-- 游戏时光 -->
+        <div id="games" class="section active module-section">
+            <h2>游戏时光</h2>
+            <p class="module-intro">在像素与方块间，重温那些纯粹的快乐。每一次移动都是与时光的对话，每一次挑战都是对自我的探索。</p>
+            <div class="game-grid">
+                <a href="pages/games/snake/" class="game-card">
+                    <div class="game-icon">
+                        <img src="images/snake.svg" alt="蛇行者">
+                    </div>
+                    <h3>蛇行者</h3>
+                    <p>在不断生长中，体味进退之间的哲学</p>
+                </a>
+                <a href="pages/games/tetris/" class="game-card">
+                    <div class="game-icon">
+                        <img src="images/tetris.svg" alt="方块之诗">
+                    </div>
+                    <h3>方块之诗</h3>
+                    <p>在几何的韵律中，寻找秩序之美</p>
+                </a>
+                <a href="pages/games/2048/" class="game-card">
+                    <div class="game-icon">
+                        <img src="images/2048.svg" alt="数字之舞">
+                    </div>
+                    <h3>数字之舞</h3>
+                    <p>让数字在方格间旋转，直到抵达那个终点</p>
+                </a>
+                <a href="pages/games/drawpi/" class="game-card">
+                    <div class="game-icon">
+                        <img src="images/drawpi.svg" alt="圆之禅意">
+                    </div>
+                    <h3>圆之禅意</h3>
+                    <p>用手绘出心中的完美，感受几何的诗意</p>
+                </a>
+                <a href="pages/games/memory/" class="game-card">
+                    <div class="game-icon">
+                        <img src="images/memory.svg" alt="记忆画廊">
+                    </div>
+                    <h3>记忆画廊</h3>
+                    <p>在翻转与匹配间，锻炼心灵的镜子</p>
+                </a>
+            </div>
+        </div>
+
+        <!-- 智慧对话 -->
+        <div id="aitools" class="section module-section">
+            <h2>智慧对话</h2>
+            <p class="module-intro">与智能灵魂对话，让思想在问答间碰撞。这里有倾听者，也有启发者，陪你度过每一个需要答案的时刻。</p>
+            <div class="game-grid">
+                <a href="pages/aitools/aichat/" class="game-card" style="border: 2px solid var(--accent-color);">
+                    <div class="game-icon" style="font-size: 3rem;">🤖</div>
+                    <h3>思绪对谈</h3>
+                    <p>简洁的对话空间，在这里与AI分享你的疑问与想法</p>
+                </a>
+                <a href="pages/aitools/chattavern/chattavern.html" class="game-card">
+                    <div class="game-icon" style="font-size: 3rem;">💬</div>
+                    <h3>角色剧场</h3>
+                    <p>与千百种灵魂相遇，在对话中体验不同的人生</p>
+                </a>
+                <a href="pages/aitools/mdreader/" class="game-card" style="border: 2px solid var(--primary-color);">
+                    <div class="game-icon">
+                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="16" y1="13" x2="8" y2="13"></line>
+                            <line x1="16" y1="17" x2="8" y2="17"></line>
+                        </svg>
+                    </div>
+                    <h3>文字净土</h3>
+                    <p>为文档提供一方安静的阅读天地</p>
+                </a>
+            </div>
+        </div>
+
+        <!-- 言语习得 -->
+        <div id="language" class="section module-section">
+            <h2>言语习得</h2>
+            <p class="module-intro">语言是通往另一个世界的桥梁。在这里，每个单词都是一块基石，每次练习都让这座桥更加坚实。</p>
+            <div class="game-grid">
+                <a href="pages/language/" class="game-card" style="border: 2px solid #4caf50;">
+                    <div class="game-icon">
+                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                            <text x="12" y="14" font-size="8" fill="currentColor" text-anchor="middle" font-weight="bold">A</text>
+                        </svg>
+                    </div>
+                    <h3>词语花园</h3>
+                    <p>在这片花园里，每个单词都是一朵待开的花</p>
+                </a>
+            </div>
+        </div>
+
+        <!-- 琴键之旅 -->
+        <div id="music" class="section module-section">
+            <h2>琴键之旅</h2>
+            <p class="module-intro">在音符的流转中，聆听内心的声音。从音阶的攀爬到旋律的辨识，每一次练习都是一场与音乐的对话。</p>
+            <div class="game-grid">
+                <a href="pages/music/" class="game-card">
+                    <div class="game-icon" style="font-size: 3rem;">🎹</div>
+                    <h3>音乐练习</h3>
+                    <p>音阶练习、单音辨听、多音辨听，全方位训练你的音乐感知力</p>
+                </a>
+            </div>
+        </div>
+
+        <!-- 社区广场 -->
+        <div id="forum" class="section module-section">
+            <h2>社区广场</h2>
+            <p class="module-intro">这里是思想汇聚的广场，是灵魂相遇的驿站。每一段对话都可能点燃新的火花，每一次分享都让世界变得更加丰盈。</p>
+            <div class="forum-preview">
+                <p class="description">在这片开放的天地里，你可以：</p>
+                <ul class="features-list">
+                    <li>分享游戏中的智慧与心得</li>
+                    <li>交流音乐练习的感悟</li>
+                    <li>提出你的想法和建议</li>
+                    <li>与同行者互相启发、共同成长</li>
+                </ul>
+                <div class="forum-card">
+                    <a href="pages/forum/" class="forum-button">踏入广场</a>
+                    <p>来吧，在这里留下你的足迹，与他人分享你的故事</p>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>&copy; 2023 光阴的游乐场 | <a href="https://github.com/GTJasonMK/online-games" target="_blank">在 GitHub Pages 上查看</a></p>
+        </footer>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>

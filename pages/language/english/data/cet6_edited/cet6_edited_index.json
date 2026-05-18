@@ -1,0 +1,130 @@
+{
+  "version": "1.0",
+  "bookId": "cet6_edited",
+  "language": "english",
+  "totalWords": 2165,
+  "totalParts": 10,
+  "generated": "2025-11-05T16:34:02.701Z",
+  "parts": [
+    {
+      "partId": 1,
+      "wordlistFile": "wordlists/cet6_edited/part1.txt",
+      "outputFile": "data/cet6_edited/cet6_edited_pregenerated_part1.json",
+      "wordCount": 217,
+      "wordRange": {
+        "start": 1,
+        "end": 217,
+        "firstWord": "abandon",
+        "lastWord": "booth"
+      }
+    },
+    {
+      "partId": 2,
+      "wordlistFile": "wordlists/cet6_edited/part2.txt",
+      "outputFile": "data/cet6_edited/cet6_edited_pregenerated_part2.json",
+      "wordCount": 217,
+      "wordRange": {
+        "start": 218,
+        "end": 434,
+        "firstWord": "border",
+        "lastWord": "conservative"
+      }
+    },
+    {
+      "partId": 3,
+      "wordlistFile": "wordlists/cet6_edited/part3.txt",
+      "outputFile": "data/cet6_edited/cet6_edited_pregenerated_part3.json",
+      "wordCount": 217,
+      "wordRange": {
+        "start": 435,
+        "end": 651,
+        "firstWord": "conserve",
+        "lastWord": "disposition"
+      }
+    },
+    {
+      "partId": 4,
+      "wordlistFile": "wordlists/cet6_edited/part4.txt",
+      "outputFile": "data/cet6_edited/cet6_edited_pregenerated_part4.json",
+      "wordCount": 217,
+      "wordRange": {
+        "start": 652,
+        "end": 868,
+        "firstWord": "disregard",
+        "lastWord": "flatter"
+      }
+    },
+    {
+      "partId": 5,
+      "wordlistFile": "wordlists/cet6_edited/part5.txt",
+      "outputFile": "data/cet6_edited/cet6_edited_pregenerated_part5.json",
+      "wordCount": 217,
+      "wordRange": {
+        "start": 869,
+        "end": 1085,
+        "firstWord": "flaw",
+        "lastWord": "insert"
+      }
+    },
+    {
+      "partId": 6,
+      "wordlistFile": "wordlists/cet6_edited/part6.txt",
+      "outputFile": "data/cet6_edited/cet6_edited_pregenerated_part6.json",
+      "wordCount": 217,
+      "wordRange": {
+        "start": 1086,
+        "end": 1302,
+        "firstWord": "insight",
+        "lastWord": "multiply"
+      }
+    },
+    {
+      "partId": 7,
+      "wordlistFile": "wordlists/cet6_edited/part7.txt",
+      "outputFile": "data/cet6_edited/cet6_edited_pregenerated_part7.json",
+      "wordCount": 217,
+      "wordRange": {
+        "start": 1303,
+        "end": 1519,
+        "firstWord": "multitude",
+        "lastWord": "pretext"
+      }
+    },
+    {
+      "partId": 8,
+      "wordlistFile": "wordlists/cet6_edited/part8.txt",
+      "outputFile": "data/cet6_edited/cet6_edited_pregenerated_part8.json",
+      "wordCount": 217,
+      "wordRange": {
+        "start": 1520,
+        "end": 1736,
+        "firstWord": "prevail",
+        "lastWord": "rip"
+      }
+    },
+    {
+      "partId": 9,
+      "wordlistFile": "wordlists/cet6_edited/part9.txt",
+      "outputFile": "data/cet6_edited/cet6_edited_pregenerated_part9.json",
+      "wordCount": 217,
+      "wordRange": {
+        "start": 1737,
+        "end": 1953,
+        "firstWord": "ritual",
+        "lastWord": "survival"
+      }
+    },
+    {
+      "partId": 10,
+      "wordlistFile": "wordlists/cet6_edited/part10.txt",
+      "outputFile": "data/cet6_edited/cet6_edited_pregenerated_part10.json",
+      "wordCount": 212,
+      "wordRange": {
+        "start": 1954,
+        "end": 2165,
+        "firstWord": "survive",
+        "lastWord": "zinc"
+      }
+    }
+  ]
+}

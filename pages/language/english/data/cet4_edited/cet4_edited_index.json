@@ -1,0 +1,130 @@
+{
+  "version": "1.0",
+  "bookId": "cet4_edited",
+  "language": "english",
+  "totalWords": 4544,
+  "totalParts": 10,
+  "generated": "2025-11-04T12:33:14.691Z",
+  "parts": [
+    {
+      "partId": 1,
+      "wordlistFile": "wordlists/cet4_edited/part1.txt",
+      "outputFile": "data/cet4_edited/cet4_edited_pregenerated_part1.json",
+      "wordCount": 455,
+      "wordRange": {
+        "start": 1,
+        "end": 455,
+        "firstWord": "a",
+        "lastWord": "brass"
+      }
+    },
+    {
+      "partId": 2,
+      "wordlistFile": "wordlists/cet4_edited/part2.txt",
+      "outputFile": "data/cet4_edited/cet4_edited_pregenerated_part2.json",
+      "wordCount": 455,
+      "wordRange": {
+        "start": 456,
+        "end": 910,
+        "firstWord": "brave",
+        "lastWord": "criminal"
+      }
+    },
+    {
+      "partId": 3,
+      "wordlistFile": "wordlists/cet4_edited/part3.txt",
+      "outputFile": "data/cet4_edited/cet4_edited_pregenerated_part3.json",
+      "wordCount": 455,
+      "wordRange": {
+        "start": 911,
+        "end": 1365,
+        "firstWord": "cripple",
+        "lastWord": "exist"
+      }
+    },
+    {
+      "partId": 4,
+      "wordlistFile": "wordlists/cet4_edited/part4.txt",
+      "outputFile": "data/cet4_edited/cet4_edited_pregenerated_part4.json",
+      "wordCount": 455,
+      "wordRange": {
+        "start": 1366,
+        "end": 1820,
+        "firstWord": "existence",
+        "lastWord": "helmet"
+      }
+    },
+    {
+      "partId": 5,
+      "wordlistFile": "wordlists/cet4_edited/part5.txt",
+      "outputFile": "data/cet4_edited/cet4_edited_pregenerated_part5.json",
+      "wordCount": 455,
+      "wordRange": {
+        "start": 1821,
+        "end": 2275,
+        "firstWord": "help",
+        "lastWord": "lorry"
+      }
+    },
+    {
+      "partId": 6,
+      "wordlistFile": "wordlists/cet4_edited/part6.txt",
+      "outputFile": "data/cet4_edited/cet4_edited_pregenerated_part6.json",
+      "wordCount": 455,
+      "wordRange": {
+        "start": 2276,
+        "end": 2730,
+        "firstWord": "lose",
+        "lastWord": "owner"
+      }
+    },
+    {
+      "partId": 7,
+      "wordlistFile": "wordlists/cet4_edited/part7.txt",
+      "outputFile": "data/cet4_edited/cet4_edited_pregenerated_part7.json",
+      "wordCount": 455,
+      "wordRange": {
+        "start": 2731,
+        "end": 3185,
+        "firstWord": "ownership",
+        "lastWord": "recommendation"
+      }
+    },
+    {
+      "partId": 8,
+      "wordlistFile": "wordlists/cet4_edited/part8.txt",
+      "outputFile": "data/cet4_edited/cet4_edited_pregenerated_part8.json",
+      "wordCount": 455,
+      "wordRange": {
+        "start": 3186,
+        "end": 3640,
+        "firstWord": "record",
+        "lastWord": "slogan"
+      }
+    },
+    {
+      "partId": 9,
+      "wordlistFile": "wordlists/cet4_edited/part9.txt",
+      "outputFile": "data/cet4_edited/cet4_edited_pregenerated_part9.json",
+      "wordCount": 455,
+      "wordRange": {
+        "start": 3641,
+        "end": 4095,
+        "firstWord": "slope",
+        "lastWord": "to"
+      }
+    },
+    {
+      "partId": 10,
+      "wordlistFile": "wordlists/cet4_edited/part10.txt",
+      "outputFile": "data/cet4_edited/cet4_edited_pregenerated_part10.json",
+      "wordCount": 449,
+      "wordRange": {
+        "start": 4096,
+        "end": 4544,
+        "firstWord": "toast",
+        "lastWord": "zoo"
+      }
+    }
+  ]
+}

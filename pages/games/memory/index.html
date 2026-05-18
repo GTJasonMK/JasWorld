@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>记忆游戏 - 多功能娱乐平台</title>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>记忆游戏</h1>
+            <nav>
+                <ul>
+                    <li><a href="../../../index.html#games">← 返回</a></li>
+                    <li><a href="../../settings/">设置</a></li>
+                </ul>
+            </nav>
+        </header>
+
+        <main>
+            <div class="game-container memory-container">
+                <div class="game-info">
+                    <div class="stats">
+                        <div class="stat-item">
+                            <span>已匹配:</span>
+                            <span id="matched-pairs">0</span>/<span id="total-pairs">8</span>
+                        </div>
+                        <div class="stat-item">
+                            <span>步数:</span>
+                            <span id="moves">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span>时间:</span>
+                            <span id="time">00:00</span>
+                        </div>
+                    </div>
+                    <div class="touch-guide">
+                        <p>在卡片上轻触翻转 👆</p>
+                    </div>
+                    <div class="game-controls">
+                        <div class="difficulty-selector">
+                            <label for="difficulty">难度:</label>
+                            <select id="difficulty">
+                                <option value="easy">简单 (4x4)</option>
+                                <option value="medium" selected>中等 (6x4)</option>
+                                <option value="hard">困难 (6x6)</option>
+                            </select>
+                        </div>
+                        <button id="start-btn" class="primary-button">开始游戏</button>
+                        <button id="reset-btn" class="primary-button">重新开始</button>
+                    </div>
+                </div>
+
+                <div class="memory-board" id="memory-board">
+                    <!-- 卡片将通过JavaScript动态创建 -->
+                </div>
+
+                <div class="game-result" id="game-result">
+                    <div class="result-content">
+                        <h2>恭喜!</h2>
+                        <p>你完成了记忆挑战!</p>
+                        <div class="result-stats">
+                            <div class="result-stat">用时: <span id="result-time">00:00</span></div>
+                            <div class="result-stat">步数: <span id="result-moves">0</span></div>
+                        </div>
+                        <button id="play-again-btn" class="primary-button">再玩一次</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="game-instructions">
+                <h2>游戏规则</h2>
+                <p>记忆游戏是一种考验记忆力的经典游戏。游戏开始时，所有卡片都是背面朝上。点击卡片将其翻转，每次可以翻转两张卡片，如果它们匹配，则保持正面朝上，否则会再次翻转为背面。目标是用最少的步数和最短的时间找出所有匹配对。</p>
+
+                <h3>如何玩:</h3>
+                <ul>
+                    <li>点击任意卡片将其翻转</li>
+                    <li>记住卡片的位置和图案</li>
+                    <li>尝试配对相同的卡片</li>
+                    <li>找出所有匹配对赢得游戏</li>
+                </ul>
+
+                <h3>提示:</h3>
+                <p>集中注意力并尝试记住卡片位置。开始时可以选择简单难度，然后逐渐挑战更高难度。</p>
+            </div>
+        </main>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+</body>
+</html>

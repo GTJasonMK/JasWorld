@@ -1,0 +1,185 @@
+/**
+ * 响应式断点规范
+ * 统一定义项目中所有模块使用的媒体查询断点
+ *
+ * 使用指南：
+ * 1. 所有新模块应导入此文件并使用这些断点
+ * 2. 优先使用CSS自定义属性而非硬编码像素值
+ * 3. 遵循移动优先的设计原则
+ */
+
+:root {
+    /* 断点定义 - 使用CSS自定义属性 */
+    --breakpoint-xs: 320px;   /* 极小屏手机（iPhone SE等） */
+    --breakpoint-sm: 480px;   /* 小屏手机 */
+    --breakpoint-md: 768px;   /* 平板竖屏 */
+    --breakpoint-lg: 1024px;  /* 平板横屏/小笔记本 */
+    --breakpoint-xl: 1280px;  /* 桌面 */
+    --breakpoint-xxl: 1920px; /* 大屏桌面 */
+
+    /* 常用的容器宽度 */
+    --container-xs: 100%;
+    --container-sm: 540px;
+    --container-md: 720px;
+    --container-lg: 960px;
+    --container-xl: 1140px;
+    --container-xxl: 1320px;
+}
+
+/**
+ * 断点使用示例：
+ *
+ * 移动优先写法（推荐）：
+ * .element {
+ *     width: 100%;  // 默认（移动端）
+ * }
+ * @media (min-width: 768px) {  // 平板及以上
+ *     .element { width: 50%; }
+ * }
+ *
+ * 桌面优先写法：
+ * .element {
+ *     width: 50%;   // 默认（桌面）
+ * }
+ * @media (max-width: 767px) {  // 小于平板
+ *     .element { width: 100%; }
+ * }
+ */
+
+/* ========== 极小屏手机 (< 320px) ========== */
+/* 不推荐专门适配，现代手机最小宽度通常为320px */
+
+/* ========== 小屏手机 (320px - 479px) ========== */
+/* 默认样式通常已适配此范围，必要时使用480px断点 */
+
+/* ========== 中屏手机 (480px - 767px) ========== */
+/*
+ * 常见设备：
+ * - iPhone 6/7/8: 375px
+ * - iPhone 6/7/8 Plus: 414px
+ * - Most Android phones: 360px-412px
+ */
+@media (min-width: 480px) {
+    /* 示例：在480px以上增大字体 */
+    /* body { font-size: 16px; } */
+}
+
+/* ========== 平板竖屏 (768px - 1023px) ========== */
+/*
+ * 常见设备：
+ * - iPad: 768px
+ * - iPad Mini: 768px
+ * - Surface: 768px
+ */
+@media (min-width: 768px) {
+    /* 示例：平板上使用两列布局 */
+    /* .grid { grid-template-columns: repeat(2, 1fr); } */
+}
+
+/* ========== 平板横屏/小笔记本 (1024px - 1279px) ========== */
+/*
+ * 常见设备：
+ * - iPad Pro: 1024px
+ * - 小笔记本
+ */
+@media (min-width: 1024px) {
+    /* 示例：三列布局 */
+    /* .grid { grid-template-columns: repeat(3, 1fr); } */
+}
+
+/* ========== 桌面 (1280px - 1919px) ========== */
+/*
+ * 标准桌面显示器
+ */
+@media (min-width: 1280px) {
+    /* 示例：四列布局 */
+    /* .grid { grid-template-columns: repeat(4, 1fr); } */
+}
+
+/* ========== 大屏桌面 (>= 1920px) ========== */
+/*
+ * 1080p及以上显示器
+ */
+@media (min-width: 1920px) {
+    /* 示例：限制最大宽度，避免内容过度拉伸 */
+    /* .container { max-width: var(--container-xxl); } */
+}
+
+/* ========== 通用移动端断点（max-width）========== */
+
+/* 小屏手机及以下 */
+@media (max-width: 479px) {
+    /* 示例：极小屏幕优化 */
+    /* .mobile-hide { display: none; } */
+}
+
+/* 平板以下（纯手机） */
+@media (max-width: 767px) {
+    /* 最常用的移动端断点 */
+    /* 示例：单列布局、大按钮、简化导航 */
+}
+
+/* 笔记本以下（手机+平板） */
+@media (max-width: 1023px) {
+    /* 示例：触摸优化 */
+    /* button { min-height: 44px; min-width: 44px; } */
+}
+
+/**
+ * 特殊媒体查询
+ */
+
+/* 触摸设备 */
+@media (hover: none) and (pointer: coarse) {
+    /* 示例：触摸设备专用样式 */
+    /* button { min-height: 44px; } */
+}
+
+/* 鼠标设备 */
+@media (hover: hover) and (pointer: fine) {
+    /* 示例：鼠标悬停效果 */
+    /* button:hover { background: blue; } */
+}
+
+/* 用户偏好：减少动画 */
+@media (prefers-reduced-motion: reduce) {
+    /* 尊重用户的无障碍设置 */
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* 用户偏好：深色模式 */
+@media (prefers-color-scheme: dark) {
+    /* 已由theme.css处理，这里仅作说明 */
+}
+
+/**
+ * 移动端优化最佳实践：
+ *
+ * 1. 触摸区域：
+ *    - 最小44x44px（Apple推荐）
+ *    - 最小48x48dp（Google推荐）
+ *    - 推荐使用48x48px作为通用标准
+ *
+ * 2. 字体大小：
+ *    - 正文最小14px（移动端）
+ *    - 输入框最小16px（防止iOS自动缩放）
+ *    - 标题建议使用rem单位
+ *
+ * 3. 间距：
+ *    - 触摸目标间距至少8px
+ *    - 内容边距建议16px（移动端）
+ *
+ * 4. 性能：
+ *    - 移动端避免复杂动画
+ *    - 使用CSS transform而非top/left
+ *    - 图片使用懒加载（loading="lazy"）
+ *
+ * 5. 网络：
+ *    - 检测网络状况（navigator.connection）
+ *    - 慢速网络时减少资源加载
+ *    - 提供离线降级方案
+ */

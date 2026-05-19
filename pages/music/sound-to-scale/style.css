@@ -98,26 +98,6 @@
     opacity: 0.76;
 }
 
-.live-note {
-    display: inline-flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: center;
-    gap: 8px;
-    min-height: 36px;
-    color: var(--text-color);
-}
-
-.live-note strong {
-    color: var(--secondary-color);
-    font-size: 24px;
-    line-height: 1;
-}
-
-.live-note span:last-child {
-    opacity: 0.72;
-}
-
 .sensitivity-control {
     display: grid;
     grid-template-columns: auto minmax(160px, 260px);

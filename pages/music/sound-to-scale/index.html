@@ -33,11 +33,6 @@
                     <span id="hold-title">按住聆听</span>
                     <small id="hold-hint">松开后识别音符与音阶</small>
                 </button>
-                <div class="live-note" aria-live="polite">
-                    <span>听到</span>
-                    <strong id="current-note">--</strong>
-                    <span id="current-frequency">-- Hz</span>
-                </div>
                 <label class="sensitivity-control" for="sensitivity-slider">
                     <span>灵敏度</span>
                     <input id="sensitivity-slider" type="range" min="1" max="10" step="1" value="9">
@@ -57,11 +52,11 @@
 
                 <div id="note-sequence" class="note-sequence empty">等待输入</div>
 
-                <div class="recording-review" aria-label="原始录音回放">
-                    <span id="recording-label">原音未保存</span>
+                <div class="recording-review" aria-label="识别音频回放">
+                    <span id="recording-label">识别音频未保存</span>
                     <div class="recording-actions">
-                        <button id="play-recording" type="button" disabled>原音</button>
-                        <a id="download-recording" class="recording-download disabled" href="#" download="sound-to-scale-recording.webm" aria-disabled="true">下载</a>
+                        <button id="play-recording" type="button" disabled>分析音频</button>
+                        <a id="download-recording" class="recording-download disabled" href="#" download="sound-to-scale-analysis.wav" aria-disabled="true">下载</a>
                         <button id="clear-recording" type="button" disabled>清除</button>
                     </div>
                 </div>

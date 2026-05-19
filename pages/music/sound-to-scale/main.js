@@ -13,17 +13,10 @@ const SCALE_TYPES = [
 const MIN_FREQ = 27.5;
 const MAX_FREQ = 4200;
 const BUFFER_SIZE = 4096;
-const FRAME_INTERVAL = 80;
-const SILENCE_GAP_MS = 260;
-const MIN_SEGMENT_FRAMES = 3;
 const MIN_PITCH_CONFIDENCE = 0.7;
+const PITCH_SUMMARY_MIN_FRAMES = 3;
 const YIN_THRESHOLD = 0.16;
 const YIN_FALLBACK_THRESHOLD = 0.24;
-const NOTE_CHANGE_CONFIRM_FRAMES = 3;
-const ONSET_MIN_GAP_MS = 180;
-const ONSET_RMS_RATIO = 1.65;
-const ONSET_RMS_DELTA = 0.004;
-const ONSET_MIN_CONFIDENCE = 0.72;
 const OFFLINE_FRAME_MS = 32;
 const OFFLINE_HOP_MS = 12;
 const OFFLINE_ATTACK_SKIP_MS = 35;
@@ -48,8 +41,6 @@ const els = {
     copy: document.getElementById('copy-sequence'),
     removeLast: document.getElementById('remove-last'),
     sensitivity: document.getElementById('sensitivity-slider'),
-    currentNote: document.getElementById('current-note'),
-    currentFrequency: document.getElementById('current-frequency'),
     status: document.getElementById('detector-status'),
     sequence: document.getElementById('note-sequence'),
     degreeSequence: document.getElementById('degree-sequence'),
@@ -57,54 +48,32 @@ const els = {
 };
 
 let audioContext = null;
-let analyser = null;
 let inputGain = null;
 let captureNode = null;
 let captureSink = null;
 let micSource = null;
 let micStream = null;
-let timeBuffer = null;
-let animationFrameId = null;
-let lastFrameAt = 0;
 let recording = false;
 let processingRecording = false;
 let pendingStart = false;
 let stopAfterStart = false;
 let capturedNotes = [];
-let recordingFrames = [];
-let recordingStats = createRecordingStats();
-let lastPitchAt = 0;
 let bestScale = null;
 let playbackContext = null;
 let playbackMode = 'idle';
 let playbackRunId = 0;
 let playbackSources = [];
 let playbackTimers = [];
-let mediaRecorder = null;
-let mediaChunks = [];
 let savedRecordingUrl = '';
 let savedRecordingBlob = null;
 let savedRecordingDuration = 0;
-let recordingStartedAt = 0;
 let originalAudio = null;
-let mediaStopPromise = null;
-let resolveMediaStop = null;
 let pcmChunks = [];
 let pcmSampleCount = 0;
 let pcmSampleRate = 0;
 let captureWorkletUrl = '';
 const pianoBufferCache = new Map();
 const hannWindowCache = new Map();
-
-function createRecordingStats() {
-    return {
-        totalFrames: 0,
-        loudFrames: 0,
-        pitchedFrames: 0,
-        maxRms: 0,
-        maxConfidence: 0,
-    };
-}
 
 function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
@@ -246,17 +215,6 @@ function setHoldState(state) {
     els.holdHint.textContent = '松开后识别音符与音阶';
 }
 
-function renderCurrent(noteInfo = null) {
-    if (!noteInfo) {
-        els.currentNote.textContent = '--';
-        els.currentFrequency.textContent = '-- Hz';
-        return;
-    }
-
-    els.currentNote.textContent = noteInfo.note;
-    els.currentFrequency.textContent = `${noteInfo.frequency.toFixed(1)} Hz`;
-}
-
 function getRmsThreshold() {
     const sensitivity = clamp(Number(els.sensitivity.value || 9), 1, 10);
     return 0.016 - ((sensitivity - 1) / 9) * 0.014;
@@ -350,28 +308,62 @@ function formatDuration(seconds) {
 }
 
 function getRecordingExtension(blob) {
-    if (blob.type.includes('mp4')) return 'm4a';
-    if (blob.type.includes('ogg')) return 'ogg';
     if (blob.type.includes('wav')) return 'wav';
-    return 'webm';
+    return 'audio';
+}
+
+function writeAscii(view, offset, text) {
+    for (let index = 0; index < text.length; index += 1) {
+        view.setUint8(offset + index, text.charCodeAt(index));
+    }
+}
+
+function createFloatWavBlob(samples, sampleRate) {
+    const bytesPerSample = 4;
+    const dataSize = samples.length * bytesPerSample;
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
+
+    writeAscii(view, 0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    writeAscii(view, 8, 'WAVE');
+    writeAscii(view, 12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 3, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * bytesPerSample, true);
+    view.setUint16(32, bytesPerSample, true);
+    view.setUint16(34, bytesPerSample * 8, true);
+    writeAscii(view, 36, 'data');
+    view.setUint32(40, dataSize, true);
+
+    let offset = 44;
+    for (let index = 0; index < samples.length; index += 1) {
+        const sample = Number.isFinite(samples[index]) ? samples[index] : 0;
+        view.setFloat32(offset, sample, true);
+        offset += bytesPerSample;
+    }
+
+    return new Blob([buffer], { type: 'audio/wav' });
 }
 
 function setRecordingReviewState(state) {
     const hasRecording = !!savedRecordingBlob;
     const isPlaying = state === 'playing';
 
-    els.playRecording.textContent = isPlaying ? '停止原音' : '原音';
+    els.playRecording.textContent = isPlaying ? '停止分析音' : '分析音频';
     els.playRecording.classList.toggle('playing', isPlaying);
     els.playRecording.disabled = !hasRecording;
     els.clearRecording.disabled = !hasRecording;
     els.recordingLabel.textContent = hasRecording
-        ? `原音已保存 ${formatDuration(savedRecordingDuration)}`
-        : '原音未保存';
+        ? `识别音频已保存 ${formatDuration(savedRecordingDuration)}`
+        : '识别音频未保存';
 
     if (hasRecording) {
         const extension = getRecordingExtension(savedRecordingBlob);
         els.downloadRecording.href = savedRecordingUrl;
-        els.downloadRecording.download = `sound-to-scale-recording-${Date.now()}.${extension}`;
+        els.downloadRecording.download = `sound-to-scale-analysis-${Date.now()}.${extension}`;
         els.downloadRecording.classList.remove('disabled');
         els.downloadRecording.setAttribute('aria-disabled', 'false');
     } else {
@@ -402,7 +394,7 @@ function clearSavedRecording() {
     stopOriginalPlayback();
     revokeSavedRecording();
     setRecordingReviewState('idle');
-    setStatus('原音已清除');
+    setStatus('识别音频已清除');
 }
 
 function saveRecordingBlob(blob, duration) {
@@ -414,89 +406,22 @@ function saveRecordingBlob(blob, duration) {
     setRecordingReviewState('idle');
 }
 
-function resolveStoppedRecording(blob = null) {
-    if (!resolveMediaStop) return;
+function savePcmRecording(pcmRecording) {
+    if (!pcmRecording?.samples?.length || !pcmRecording.sampleRate) return;
 
-    resolveMediaStop(blob);
-    resolveMediaStop = null;
-    mediaStopPromise = null;
-}
-
-function getMediaRecorderOptions() {
-    const types = [
-        'audio/webm;codecs=opus',
-        'audio/ogg;codecs=opus',
-        'audio/mp4',
-    ];
-    const mimeType = types.find(type => window.MediaRecorder?.isTypeSupported?.(type));
-    return mimeType ? { mimeType } : undefined;
-}
-
-function startOriginalRecording() {
-    mediaRecorder = null;
-    mediaChunks = [];
-    recordingStartedAt = performance.now();
-    mediaStopPromise = new Promise(resolve => {
-        resolveMediaStop = resolve;
-    });
-
-    if (!window.MediaRecorder || !micStream) {
-        els.recordingLabel.textContent = '浏览器不支持保存原音';
-        resolveStoppedRecording(null);
-        return;
-    }
-
-    try {
-        mediaRecorder = new MediaRecorder(micStream, getMediaRecorderOptions());
-        mediaRecorder.addEventListener('dataavailable', (event) => {
-            if (event.data?.size > 0) mediaChunks.push(event.data);
-        });
-        mediaRecorder.addEventListener('stop', () => {
-            if (mediaChunks.length === 0) {
-                resolveStoppedRecording(null);
-                return;
-            }
-
-            const blob = new Blob(mediaChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
-            saveRecordingBlob(blob, (performance.now() - recordingStartedAt) / 1000);
-            mediaChunks = [];
-            resolveStoppedRecording(blob);
-        });
-        mediaRecorder.start();
-    } catch (error) {
-        console.warn('[听音识阶] 原音保存不可用', error);
-        mediaRecorder = null;
-        els.recordingLabel.textContent = '原音保存不可用';
-        resolveStoppedRecording(null);
-    }
-}
-
-function stopOriginalRecording() {
-    const stopped = mediaStopPromise || Promise.resolve(null);
-
-    if (!mediaRecorder) {
-        resolveStoppedRecording(null);
-        return stopped;
-    }
-
-    if (mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
-    } else {
-        resolveStoppedRecording(savedRecordingBlob);
-    }
-
-    return stopped;
+    const blob = createFloatWavBlob(pcmRecording.samples, pcmRecording.sampleRate);
+    saveRecordingBlob(blob, pcmRecording.samples.length / pcmRecording.sampleRate);
 }
 
 function playSavedRecording() {
     if (!savedRecordingUrl) {
-        setStatus('没有保存的原音');
+        setStatus('没有保存的识别音频');
         return;
     }
 
     if (originalAudio) {
         stopOriginalPlayback();
-        setStatus('已停止原音');
+        setStatus('已停止识别音频');
         return;
     }
 
@@ -506,20 +431,20 @@ function playSavedRecording() {
     originalAudio.addEventListener('ended', () => {
         originalAudio = null;
         setRecordingReviewState('idle');
-        setStatus('原音播放完成');
+        setStatus('识别音频播放完成');
     }, { once: true });
     originalAudio.addEventListener('error', () => {
         originalAudio = null;
         setRecordingReviewState('idle');
-        setStatus('原音播放失败');
+        setStatus('识别音频播放失败');
     }, { once: true });
     setRecordingReviewState('playing');
-    setStatus('播放原音');
+    setStatus('播放识别音频');
     originalAudio.play().catch(error => {
-        console.warn('[听音识阶] 原音播放失败', error);
+        console.warn('[听音识阶] 识别音频播放失败', error);
         originalAudio = null;
         setRecordingReviewState('idle');
-        setStatus('原音播放失败');
+        setStatus('识别音频播放失败');
     });
 }
 
@@ -798,20 +723,6 @@ function getPeakAmplitude(samples) {
         peak = Math.max(peak, Math.abs(samples[index]));
     }
     return peak;
-}
-
-function audioBufferToMono(audioBuffer) {
-    const samples = new Float32Array(audioBuffer.length);
-    const channelCount = Math.max(1, audioBuffer.numberOfChannels);
-
-    for (let channel = 0; channel < channelCount; channel += 1) {
-        const data = audioBuffer.getChannelData(channel);
-        for (let index = 0; index < samples.length; index += 1) {
-            samples[index] += data[index] / channelCount;
-        }
-    }
-
-    return samples;
 }
 
 function normalizeSamples(samples) {
@@ -1655,6 +1566,79 @@ function correctOctaveFrequency(buffer, sampleRate, frequency) {
     return frequency;
 }
 
+function clonePitchFrameWithMidi(frame, midi) {
+    const frequency = midiToFrequency(midi);
+    return {
+        ...frame,
+        midi,
+        note: midiToNote(midi),
+        pitchClass: ((midi % 12) + 12) % 12,
+        frequency,
+        cents: 0,
+    };
+}
+
+function stabilizePitchFrames(frames) {
+    if (frames.length < 3) return frames;
+
+    const stabilized = frames.map(frame => ({ ...frame }));
+    for (let index = 1; index < stabilized.length - 1; index += 1) {
+        const previous = stabilized[index - 1];
+        const current = stabilized[index];
+        const next = stabilized[index + 1];
+        const isIsolatedSpike = previous.midi === next.midi && current.midi !== previous.midi;
+        const isOctaveSpike = previous.pitchClass === current.pitchClass
+            && next.pitchClass === current.pitchClass
+            && Math.abs(current.midi - previous.midi) >= 12
+            && Math.abs(current.midi - next.midi) >= 12;
+
+        if (isIsolatedSpike || isOctaveSpike) {
+            stabilized[index] = clonePitchFrameWithMidi(current, previous.midi);
+        }
+    }
+
+    return stabilized;
+}
+
+function summarizePitchFrames(frames) {
+    if (frames.length < PITCH_SUMMARY_MIN_FRAMES) return null;
+
+    const midiWeights = new Map();
+    const midiFrames = new Map();
+    let totalWeight = 0;
+
+    frames.forEach(frame => {
+        const weight = Math.max(0.1, frame.confidence) * clamp(frame.rms / 0.035, 0.4, 1.6);
+        totalWeight += weight;
+        midiWeights.set(frame.midi, (midiWeights.get(frame.midi) || 0) + weight);
+        if (!midiFrames.has(frame.midi)) midiFrames.set(frame.midi, []);
+        midiFrames.get(frame.midi).push(frame);
+    });
+
+    let bestMidi = null;
+    let bestWeight = 0;
+    midiWeights.forEach((weight, midi) => {
+        if (weight > bestWeight) {
+            bestMidi = midi;
+            bestWeight = weight;
+        }
+    });
+
+    if (bestMidi === null || bestWeight / totalWeight < 0.42) return null;
+
+    const framesForMidi = midiFrames.get(bestMidi);
+    const medianFrequency = median(framesForMidi.map(frame => frame.frequency));
+    const medianCents = median(framesForMidi.map(frame => frame.cents));
+
+    return {
+        note: midiToNote(bestMidi),
+        midi: bestMidi,
+        pitchClass: ((bestMidi % 12) + 12) % 12,
+        frequency: medianFrequency,
+        cents: medianCents,
+    };
+}
+
 function analyzeOfflineSegment(samples, sampleRate, segment) {
     const durationMs = segment.endMs - segment.startMs;
     if (durationMs < OFFLINE_MIN_SEGMENT_MS) return null;
@@ -1691,7 +1675,7 @@ function analyzeOfflineSegment(samples, sampleRate, segment) {
         });
     }
 
-    const yinNote = summarizeSegment(stabilizePitchFrames(frames));
+    const yinNote = summarizePitchFrames(stabilizePitchFrames(frames));
     const segmentBuffer = buildSegmentPitchBuffer(samples, sampleRate, segment, OFFLINE_ATTACK_SKIP_MS);
     const spectralNote = detectSpectralPitch(segmentBuffer, sampleRate, yinNote?.midi ?? null);
 
@@ -1818,17 +1802,6 @@ function splitSegmentsByPitch(samples, sampleRate, segments, features = []) {
     return refined;
 }
 
-async function decodeRecordingBlob(blob) {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    const context = new AudioCtx();
-
-    try {
-        return await context.decodeAudioData(await blob.arrayBuffer());
-    } finally {
-        context.close().catch(() => {});
-    }
-}
-
 function analyzePcmRecording(rawSamples, sampleRate) {
     const normalized = normalizeSamples(preprocessSamples(rawSamples, sampleRate));
     const durationMs = (normalized.samples.length / sampleRate) * 1000;
@@ -1867,11 +1840,6 @@ function analyzePcmRecording(rawSamples, sampleRate) {
     };
 }
 
-async function analyzeRecordingBlob(blob) {
-    const decoded = await decodeRecordingBlob(blob);
-    return analyzePcmRecording(audioBufferToMono(decoded), decoded.sampleRate);
-}
-
 function dedupeRecognizedNotes(notes) {
     return notes.reduce((result, note) => {
         const previous = result[result.length - 1];
@@ -1880,7 +1848,6 @@ function dedupeRecognizedNotes(notes) {
             return result;
         }
 
-        const gap = (note.startMs ?? 0) - (previous.endMs ?? 0);
         const duration = (note.endMs ?? 0) - (note.startMs ?? 0);
         const sameMidi = note.midi === previous.midi;
         const shortTail = duration > 0 && duration < OFFLINE_MIN_SEGMENT_MS * 1.4;
@@ -1918,253 +1885,6 @@ function getOfflineFailureMessage(result) {
     if (result.ranges.length === 0) return '声音偏小, 已提高灵敏度';
     if (result.segments.length === 0) return '没有分出稳定音段';
     return '检测到声音, 但音高不够稳定';
-}
-
-function cloneFrameWithMidi(frame, midi) {
-    const frequency = midiToFrequency(midi);
-    return {
-        ...frame,
-        midi,
-        note: midiToNote(midi),
-        pitchClass: ((midi % 12) + 12) % 12,
-        frequency,
-        cents: 0,
-    };
-}
-
-function stabilizePitchFrames(frames) {
-    if (frames.length < 3) return frames;
-
-    const stabilized = frames.map(frame => ({ ...frame }));
-    for (let index = 1; index < stabilized.length - 1; index += 1) {
-        const previous = stabilized[index - 1];
-        const current = stabilized[index];
-        const next = stabilized[index + 1];
-        const isIsolatedSpike = previous.midi === next.midi && current.midi !== previous.midi;
-        const isOctaveSpike = previous.pitchClass === current.pitchClass
-            && next.pitchClass === current.pitchClass
-            && Math.abs(current.midi - previous.midi) >= 12
-            && Math.abs(current.midi - next.midi) >= 12;
-
-        if (isIsolatedSpike || isOctaveSpike) {
-            stabilized[index] = cloneFrameWithMidi(current, previous.midi);
-        }
-    }
-
-    return stabilized;
-}
-
-function summarizeSegment(segment) {
-    if (segment.length < MIN_SEGMENT_FRAMES) return null;
-
-    const midiWeights = new Map();
-    const midiFrames = new Map();
-    let totalWeight = 0;
-
-    segment.forEach(frame => {
-        const weight = Math.max(0.1, frame.confidence) * clamp(frame.rms / 0.035, 0.4, 1.6);
-        totalWeight += weight;
-        midiWeights.set(frame.midi, (midiWeights.get(frame.midi) || 0) + weight);
-        if (!midiFrames.has(frame.midi)) midiFrames.set(frame.midi, []);
-        midiFrames.get(frame.midi).push(frame);
-    });
-
-    let bestMidi = null;
-    let bestWeight = 0;
-    midiWeights.forEach((weight, midi) => {
-        if (weight > bestWeight) {
-            bestMidi = midi;
-            bestWeight = weight;
-        }
-    });
-
-    if (bestMidi === null || bestWeight / totalWeight < 0.42) return null;
-
-    const frames = midiFrames.get(bestMidi);
-    const medianFrequency = median(frames.map(frame => frame.frequency));
-    const medianCents = median(frames.map(frame => frame.cents));
-
-    return {
-        note: midiToNote(bestMidi),
-        midi: bestMidi,
-        pitchClass: ((bestMidi % 12) + 12) % 12,
-        frequency: medianFrequency,
-        cents: medianCents,
-    };
-}
-
-function isEnergyOnset(previousFrame, frame, currentSegment) {
-    if (!previousFrame || currentSegment.length < MIN_SEGMENT_FRAMES) return false;
-    if (frame.confidence < ONSET_MIN_CONFIDENCE) return false;
-    if (frame.time - currentSegment[0].time < ONSET_MIN_GAP_MS) return false;
-    if (frame.time - previousFrame.time > SILENCE_GAP_MS) return false;
-
-    const recentRms = currentSegment.slice(-3).map(item => item.rms);
-    const baseline = Math.max(median(recentRms), previousFrame.rms || 0, 0.0001);
-    const delta = frame.rms - baseline;
-    const ratio = frame.rms / baseline;
-
-    return delta >= ONSET_RMS_DELTA && ratio >= ONSET_RMS_RATIO;
-}
-
-function splitFramesIntoSegments(frames) {
-    const segments = [];
-    let currentSegment = [];
-    let anchorMidi = null;
-    let pendingChange = [];
-
-    function startSegment(frame) {
-        currentSegment = [frame];
-        anchorMidi = frame.midi;
-        pendingChange = [];
-    }
-
-    function closeSegment() {
-        if (pendingChange.length >= MIN_SEGMENT_FRAMES && currentSegment.length >= MIN_SEGMENT_FRAMES) {
-            segments.push(currentSegment);
-            currentSegment = pendingChange;
-            anchorMidi = summarizeSegment(currentSegment)?.midi || currentSegment[0].midi;
-        } else {
-            currentSegment.push(...pendingChange);
-        }
-
-        pendingChange = [];
-        if (currentSegment.length > 0) segments.push(currentSegment);
-        currentSegment = [];
-        anchorMidi = null;
-    }
-
-    frames.forEach(frame => {
-        if (currentSegment.length === 0) {
-            startSegment(frame);
-            return;
-        }
-
-        const previousFrame = pendingChange[pendingChange.length - 1] || currentSegment[currentSegment.length - 1];
-        if (frame.time - previousFrame.time > SILENCE_GAP_MS) {
-            closeSegment();
-            startSegment(frame);
-            return;
-        }
-
-        if (isEnergyOnset(previousFrame, frame, currentSegment)) {
-            if (pendingChange.length > 0 && frame.midi === pendingChange[0].midi) {
-                segments.push(currentSegment);
-                currentSegment = [...pendingChange, frame];
-                anchorMidi = summarizeSegment(currentSegment)?.midi || currentSegment[0].midi;
-            } else {
-                segments.push([...currentSegment, ...pendingChange]);
-                startSegment(frame);
-            }
-
-            pendingChange = [];
-            return;
-        }
-
-        if (Math.abs(frame.midi - anchorMidi) === 0) {
-            currentSegment.push(...pendingChange, frame);
-            pendingChange = [];
-            return;
-        }
-
-        if (pendingChange.length > 0 && frame.midi !== pendingChange[0].midi) {
-            currentSegment.push(...pendingChange);
-            pendingChange = [];
-        }
-
-        pendingChange.push(frame);
-        if (pendingChange.length >= NOTE_CHANGE_CONFIRM_FRAMES) {
-            segments.push(currentSegment);
-            currentSegment = pendingChange;
-            anchorMidi = summarizeSegment(currentSegment)?.midi || currentSegment[0].midi;
-            pendingChange = [];
-        }
-    });
-
-    if (currentSegment.length > 0) closeSegment();
-    return segments;
-}
-
-function extractNotesFromFrames(frames) {
-    if (frames.length < MIN_SEGMENT_FRAMES) return [];
-
-    return splitFramesIntoSegments(stabilizePitchFrames(frames))
-        .map(summarizeSegment)
-        .filter(Boolean);
-}
-
-function getRecordingFailureMessage() {
-    if (recordingStats.totalFrames < MIN_SEGMENT_FRAMES) {
-        return '按住时间太短';
-    }
-
-    if (recordingStats.maxRms < getRmsThreshold()) {
-        return getVolumeHint();
-    }
-
-    if (recordingStats.loudFrames > 0 && recordingStats.maxConfidence < MIN_PITCH_CONFIDENCE) {
-        return '音高不够清晰, 请录单音';
-    }
-
-    if (recordingStats.pitchedFrames < MIN_SEGMENT_FRAMES) {
-        return '清晰音太短, 请多按一会儿';
-    }
-
-    return '没有听到清晰单音';
-}
-
-function handlePitch(result, now) {
-    recordingStats.totalFrames += 1;
-    recordingStats.maxRms = Math.max(recordingStats.maxRms, result.rms || 0);
-    recordingStats.maxConfidence = Math.max(recordingStats.maxConfidence, result.confidence || 0);
-    if (result.reason !== 'quiet') recordingStats.loudFrames += 1;
-
-    if (!result.frequency) {
-        if (recordingStats.totalFrames >= 4 && result.reason === 'quiet') {
-            renderCurrent();
-            setStatus('声音偏小, 靠近麦克风');
-            return;
-        }
-
-        if (recordingStats.totalFrames >= 4 && result.reason === 'unclear') {
-            setStatus('检测到声音, 请保持单音');
-            return;
-        }
-
-        if (recordingFrames.length > 0 && now - lastPitchAt > SILENCE_GAP_MS) {
-            setStatus(`已采集 ${recordingFrames.length} 帧`);
-        }
-        return;
-    }
-
-    const noteInfo = frequencyToNote(result.frequency);
-    renderCurrent(noteInfo);
-    lastPitchAt = now;
-    recordingStats.pitchedFrames += 1;
-    recordingFrames.push({
-        time: now,
-        note: noteInfo.note,
-        midi: noteInfo.midi,
-        pitchClass: noteInfo.pitchClass,
-        frequency: noteInfo.frequency,
-        cents: noteInfo.cents,
-        confidence: result.confidence,
-        rms: result.rms,
-    });
-    setStatus(`正在采集 ${recordingFrames.length} 帧`);
-}
-
-function tick(now = performance.now()) {
-    if (!recording || !analyser || !timeBuffer || !audioContext) return;
-
-    animationFrameId = requestAnimationFrame(tick);
-    if (now - lastFrameAt < FRAME_INTERVAL) return;
-    lastFrameAt = now;
-
-    syncInputGain();
-    analyser.getFloatTimeDomainData(timeBuffer);
-    const threshold = getRmsThreshold();
-    handlePitch(detectPitch(timeBuffer, audioContext.sampleRate, threshold), now);
 }
 
 async function getMicrophoneStream() {
@@ -2280,7 +2000,6 @@ async function connectAudioInput() {
     }
 
     micSource.connect(inputGain);
-    inputGain.connect(analyser);
     inputGain.connect(captureNode);
     captureNode.connect(captureSink);
     captureSink.connect(audioContext.destination);
@@ -2308,18 +2027,6 @@ function disconnectAudioInput() {
         micSource.disconnect();
         micSource = null;
     }
-}
-
-function getVolumeHint() {
-    if (recordingStats.maxRms < 0.0015) {
-        return '几乎没有输入, 请检查麦克风';
-    }
-
-    if (recordingStats.maxRms < getRmsThreshold()) {
-        return '声音偏小, 已提高灵敏度';
-    }
-
-    return '声音太小, 请靠近麦克风';
 }
 
 async function ensureAudioContextRunning() {
@@ -2351,26 +2058,16 @@ async function startRecording() {
         micStream = await getMicrophoneStream();
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         audioContext = new AudioCtx();
-        analyser = audioContext.createAnalyser();
-        analyser.fftSize = BUFFER_SIZE;
-        analyser.smoothingTimeConstant = 0;
-        timeBuffer = new Float32Array(analyser.fftSize);
         await connectAudioInput();
         await ensureAudioContextRunning();
         describeInputTrack();
 
         recording = true;
         pendingStart = false;
-        recordingFrames = [];
-        recordingStats = createRecordingStats();
         resetPcmCapture();
-        lastPitchAt = 0;
-        lastFrameAt = 0;
-        startOriginalRecording();
 
         setHoldState('recording');
-        setStatus('继续按住, 逐个弹奏或哼唱');
-        animationFrameId = requestAnimationFrame(tick);
+        setStatus('继续按住, 松开后识别');
 
         if (stopAfterStart) {
             stopAfterStart = false;
@@ -2385,11 +2082,6 @@ async function startRecording() {
 }
 
 function closeAudioInput() {
-    if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-        animationFrameId = null;
-    }
-
     disconnectAudioInput();
 
     if (micStream) {
@@ -2402,41 +2094,31 @@ function closeAudioInput() {
         audioContext = null;
     }
 
-    analyser = null;
-    timeBuffer = null;
 }
 
-async function commitRecording(recordingBlob = null, pcmRecording = null) {
+async function commitRecording(pcmRecording = null) {
     setHoldState('processing');
     setStatus('正在识别');
 
     let recognizedNotes = [];
     let offlineResult = null;
 
-    if (pcmRecording) {
-        try {
-            offlineResult = analyzePcmRecording(pcmRecording.samples, pcmRecording.sampleRate);
-            recognizedNotes = offlineResult.notes;
-        } catch (error) {
-            console.warn('[听音识阶] PCM 离线识别失败, 尝试录音 Blob', error);
-        }
+    if (!pcmRecording?.samples?.length || !pcmRecording.sampleRate) {
+        setStatus('没有采集到识别音频');
+        return;
     }
 
-    if (recognizedNotes.length === 0 && recordingBlob) {
-        try {
-            offlineResult = await analyzeRecordingBlob(recordingBlob);
-            recognizedNotes = offlineResult.notes;
-        } catch (error) {
-            console.warn('[听音识阶] 离线识别失败, 使用实时帧回退', error);
-        }
+    try {
+        offlineResult = analyzePcmRecording(pcmRecording.samples, pcmRecording.sampleRate);
+        recognizedNotes = offlineResult.notes;
+    } catch (error) {
+        console.warn('[听音识阶] PCM 离线识别失败', error);
+        setStatus('识别失败');
+        return;
     }
 
     if (recognizedNotes.length === 0) {
-        recognizedNotes = extractNotesFromFrames(recordingFrames);
-    }
-
-    if (recognizedNotes.length === 0) {
-        setStatus(getOfflineFailureMessage(offlineResult) || getRecordingFailureMessage());
+        setStatus(getOfflineFailureMessage(offlineResult) || '没有识别到音符');
         return;
     }
 
@@ -2451,27 +2133,29 @@ async function stopRecording(commit = true) {
         return;
     }
 
-    if (!recording) return;
-    recording = false;
+    if (!recording || processingRecording) return;
     processingRecording = commit;
+
+    if (commit) {
+        setHoldState('processing');
+        setStatus('正在整理录音');
+        await new Promise(resolve => window.setTimeout(resolve, 48));
+    }
+
+    recording = false;
     const pcmRecording = getCapturedPcmRecording();
-    const stoppedRecording = stopOriginalRecording();
     closeAudioInput();
 
     try {
         if (commit) {
-            const recordingBlob = await stoppedRecording;
-            await commitRecording(recordingBlob, pcmRecording);
+            savePcmRecording(pcmRecording);
+            await commitRecording(pcmRecording);
         }
     } catch (error) {
         console.error('[听音识阶] 识别失败', error);
         setStatus('识别失败');
     } finally {
-        recordingFrames = [];
-        recordingStats = createRecordingStats();
-        lastPitchAt = 0;
         processingRecording = false;
-        renderCurrent();
         setHoldState('idle');
     }
 }
@@ -2481,7 +2165,7 @@ function clearSequence() {
     capturedNotes = [];
     bestScale = null;
     renderSequence();
-    setStatus(recording ? '继续按住, 逐个弹奏或哼唱' : '按住开始');
+    setStatus(recording ? '继续按住, 松开后识别' : '按住开始');
 }
 
 function removeLastNote() {
@@ -2560,7 +2244,6 @@ els.sequence.addEventListener('click', (event) => {
 window.addEventListener('beforeunload', () => {
     recording = false;
     pendingStart = false;
-    stopOriginalRecording();
     stopOriginalPlayback();
     stopPlayback();
     if (playbackContext && playbackContext.state !== 'closed') {

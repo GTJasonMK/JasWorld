@@ -285,6 +285,10 @@ function choosePitchResult(yin, mpm) {
     const mpmMidi = frequencyToMidi(mpm.frequency);
     const distance = Math.abs(yinMidi - mpmMidi);
 
+    if (mpmMidi < yinMidi - 12 && yin.confidence >= 0.52) {
+        return yin;
+    }
+
     if (distance === 0) {
         return {
             ...yin,
@@ -438,8 +442,8 @@ function writeAscii(view, offset, text) {
     }
 }
 
-function createFloatWavBlob(samples, sampleRate) {
-    const bytesPerSample = 4;
+function createPcmWavBlob(samples, sampleRate) {
+    const bytesPerSample = 2;
     const dataSize = samples.length * bytesPerSample;
     const buffer = new ArrayBuffer(44 + dataSize);
     const view = new DataView(buffer);
@@ -449,7 +453,7 @@ function createFloatWavBlob(samples, sampleRate) {
     writeAscii(view, 8, 'WAVE');
     writeAscii(view, 12, 'fmt ');
     view.setUint32(16, 16, true);
-    view.setUint16(20, 3, true);
+    view.setUint16(20, 1, true);
     view.setUint16(22, 1, true);
     view.setUint32(24, sampleRate, true);
     view.setUint32(28, sampleRate * bytesPerSample, true);
@@ -460,8 +464,8 @@ function createFloatWavBlob(samples, sampleRate) {
 
     let offset = 44;
     for (let index = 0; index < samples.length; index += 1) {
-        const sample = Number.isFinite(samples[index]) ? samples[index] : 0;
-        view.setFloat32(offset, sample, true);
+        const sample = clamp(Number.isFinite(samples[index]) ? samples[index] : 0, -1, 1);
+        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
         offset += bytesPerSample;
     }
 
@@ -529,7 +533,7 @@ function saveRecordingBlob(blob, duration) {
 function savePcmRecording(pcmRecording) {
     if (!pcmRecording?.samples?.length || !pcmRecording.sampleRate) return;
 
-    const blob = createFloatWavBlob(pcmRecording.samples, pcmRecording.sampleRate);
+    const blob = createPcmWavBlob(pcmRecording.samples, pcmRecording.sampleRate);
     saveRecordingBlob(blob, pcmRecording.samples.length / pcmRecording.sampleRate);
 }
 
@@ -845,20 +849,36 @@ function getPeakAmplitude(samples) {
     return peak;
 }
 
+function getNormalizationPeak(samples, peak) {
+    if (peak <= 0.000001) return peak;
+
+    const step = Math.max(1, Math.ceil(samples.length / 24000));
+    const amplitudes = [];
+    for (let index = 0; index < samples.length; index += step) {
+        amplitudes.push(Math.abs(samples[index]));
+    }
+
+    const p995 = percentile(amplitudes, 0.995);
+    const p999 = percentile(amplitudes, 0.999);
+    const robustPeak = Math.max(p995 * 1.8, p999 * 1.12, peak * 0.08, 0.000001);
+    return Math.min(peak, robustPeak);
+}
+
 function normalizeSamples(samples) {
     const peak = getPeakAmplitude(samples);
     const rawRms = calculateRmsRange(samples, 0, samples.length);
     if (peak <= 0.000001) {
-        return { samples: new Float32Array(samples), peak, rawRms, gain: 1 };
+        return { samples: new Float32Array(samples), peak, normalizationPeak: peak, rawRms, gain: 1 };
     }
 
-    const gain = Math.min(24, 0.9 / peak);
+    const normalizationPeak = getNormalizationPeak(samples, peak);
+    const gain = Math.min(36, 0.82 / Math.max(normalizationPeak, 0.000001));
     const normalized = new Float32Array(samples.length);
     for (let index = 0; index < samples.length; index += 1) {
         normalized[index] = clamp(samples[index] * gain, -1, 1);
     }
 
-    return { samples: normalized, peak, rawRms, gain };
+    return { samples: normalized, peak, normalizationPeak, rawRms, gain };
 }
 
 function removeDcAndHighPass(samples, sampleRate) {
@@ -951,12 +971,16 @@ function spectralDenoise(samples, sampleRate) {
     const noise = estimateNoiseProfile(samples, sampleRate, frameSize, hopSize);
     if (!noise) return samples;
 
+    const rawRms = calculateRmsRange(samples, 0, samples.length);
+    const weakInput = rawRms < 0.004;
     const output = new Float32Array(samples.length + frameSize);
     const weights = new Float32Array(output.length);
     const real = new Float32Array(frameSize);
     const imag = new Float32Array(frameSize);
     const windowValues = getHannWindow(frameSize);
-    const floor = 0.12;
+    const floor = weakInput ? 0.28 : 0.12;
+    const subtraction = weakInput ? 1.08 : 1.55;
+    const cleanRatio = weakInput ? 5.5 : 8;
 
     for (let start = 0; start < samples.length; start += hopSize) {
         real.fill(0);
@@ -972,9 +996,9 @@ function spectralDenoise(samples, sampleRate) {
             const magnitude = Math.hypot(real[bin], imag[bin]);
             const noiseMagnitude = noise[bin] || 0;
             const signalOverNoise = magnitude / Math.max(noiseMagnitude, 0.000001);
-            const reduction = signalOverNoise > 8
+            const reduction = signalOverNoise > cleanRatio
                 ? 1
-                : clamp((magnitude - noiseMagnitude * 1.55) / Math.max(magnitude, 0.000001), floor, 1);
+                : clamp((magnitude - noiseMagnitude * subtraction) / Math.max(magnitude, 0.000001), floor, 1);
             real[bin] *= reduction;
             imag[bin] *= reduction;
 
@@ -1007,7 +1031,18 @@ function softNoiseGate(samples, sampleRate) {
     const filtered = new Float32Array(samples);
     const noiseWindow = Math.max(512, Math.min(filtered.length, Math.round(sampleRate * 0.25)));
     const leadingRms = calculateRmsRange(filtered, 0, noiseWindow);
-    const gate = Math.min(0.01, leadingRms * 1.1);
+    const frameSize = Math.max(512, Math.round(sampleRate * 0.035));
+    const hopSize = Math.max(256, Math.floor(frameSize / 2));
+    const frameRmsValues = [];
+
+    for (let start = 0; start < filtered.length; start += hopSize) {
+        const end = Math.min(filtered.length, start + frameSize);
+        if (end - start < frameSize * 0.6) break;
+        frameRmsValues.push(calculateRmsRange(filtered, start, end));
+    }
+
+    const quietRms = frameRmsValues.length > 0 ? percentile(frameRmsValues, 0.18) : leadingRms;
+    const gate = Math.min(0.006, Math.max(0, Math.min(leadingRms * 0.55, quietRms * 1.35)));
 
     if (gate <= 0.00008) return filtered;
 
@@ -1015,9 +1050,9 @@ function softNoiseGate(samples, sampleRate) {
         const value = filtered[index];
         const magnitude = Math.abs(value);
         if (magnitude < gate) {
-            filtered[index] = 0;
+            filtered[index] = value * 0.22;
         } else {
-            filtered[index] = Math.sign(value) * (magnitude - gate * 0.65);
+            filtered[index] = Math.sign(value) * (magnitude - gate * 0.35);
         }
     }
 
@@ -1026,6 +1061,10 @@ function softNoiseGate(samples, sampleRate) {
 
 function preprocessSamples(samples, sampleRate) {
     const highPassed = removeDcAndHighPass(samples, sampleRate);
+    if (calculateRmsRange(highPassed, 0, highPassed.length) < 0.006) {
+        return softNoiseGate(highPassed, sampleRate);
+    }
+
     const denoised = spectralDenoise(highPassed, sampleRate);
     return softNoiseGate(denoised, sampleRate);
 }
@@ -1193,10 +1232,12 @@ function getOfflineThresholds(features) {
     const leadingRms = features.slice(0, Math.min(12, features.length)).map(frame => frame.rms);
     const noiseRms = Math.max(0.0001, Math.min(median(leadingRms), percentile(rmsValues, 0.35)));
     const highRms = percentile(rmsValues, 0.9);
-    const activeRms = Math.max(0.004, noiseRms * 2.2, highRms * 0.18);
+    const activeFloor = highRms < 0.002 ? 0.00018 : highRms < 0.018 ? 0.0012 : 0.004;
+    const activeRms = Math.max(activeFloor, noiseRms * 1.6, highRms * 0.16);
     const fluxMedian = percentile(fluxValues, 0.5);
     const fluxHigh = percentile(fluxValues, 0.9);
-    const flux = Math.max(0.006, fluxMedian * 2.4, fluxHigh * 0.45);
+    const fluxFloor = highRms < 0.002 ? 0.0002 : highRms < 0.018 ? 0.003 : 0.006;
+    const flux = Math.max(fluxFloor, fluxMedian * 2.2, fluxHigh * 0.42);
 
     return {
         activeRms,
@@ -1725,11 +1766,73 @@ function mergePitchEstimates(yinNote, spectralNote) {
     return yinNote;
 }
 
+function correctLowOctaveNoteFromSpectrum(note, buffer, sampleRate) {
+    if (!note || note.midi >= 48 || !buffer?.length) return note;
+
+    const { magnitudes, fftSize, peak } = computeLinearSpectrum(buffer, sampleRate);
+    if (peak <= 0) return note;
+
+    const currentScore = scoreMidiCandidate(magnitudes, sampleRate, fftSize, peak, note.midi)
+        + scoreHpsMidiCandidate(magnitudes, sampleRate, fftSize, peak, note.midi) * 0.6;
+    let bestMidi = note.midi;
+    let bestScore = currentScore;
+
+    for (let midi = note.pitchClass; midi <= 84; midi += 12) {
+        if (midi < 48) continue;
+        const score = scoreMidiCandidate(magnitudes, sampleRate, fftSize, peak, midi)
+            + scoreHpsMidiCandidate(magnitudes, sampleRate, fftSize, peak, midi) * 0.6;
+
+        if (score > bestScore) {
+            bestMidi = midi;
+            bestScore = score;
+        }
+    }
+
+    if (bestMidi === note.midi || bestScore < Math.max(0.028, currentScore * 0.82)) return note;
+
+    return {
+        ...note,
+        note: midiToNote(bestMidi),
+        midi: bestMidi,
+        pitchClass: ((bestMidi % 12) + 12) % 12,
+        frequency: midiToFrequency(bestMidi),
+        cents: 0,
+        confidence: Math.max(note.confidence || 0, clamp(bestScore / Math.max(0.001, currentScore), 0, 1)),
+        score: bestScore,
+    };
+}
+
 function correctOctaveFrequency(buffer, sampleRate, frequency) {
     const lowerFrequency = frequency / 2;
+    const midi = frequencyToMidi(frequency);
+
+    if (midi < 48) {
+        const currentMagnitude = spectralMagnitudeAtFrequency(buffer, sampleRate, frequency);
+        const currentScore = periodicityAtFrequency(buffer, sampleRate, frequency);
+        let bestFrequency = frequency;
+        let bestScore = currentMagnitude * Math.max(0.18, currentScore);
+
+        for (let multiplier = 2; frequency * multiplier <= MAX_FREQ; multiplier *= 2) {
+            const candidate = frequency * multiplier;
+            const candidateMidi = frequencyToMidi(candidate);
+            if (candidateMidi > 84) break;
+
+            const magnitude = spectralMagnitudeAtFrequency(buffer, sampleRate, candidate);
+            const periodicity = periodicityAtFrequency(buffer, sampleRate, candidate);
+            const score = magnitude * Math.max(0.18, periodicity);
+            const strongOctaveSupport = magnitude >= currentMagnitude * 1.15 || score >= bestScore * 1.24;
+
+            if (strongOctaveSupport && periodicity >= 0.24 && score > bestScore) {
+                bestFrequency = candidate;
+                bestScore = score;
+            }
+        }
+
+        if (bestFrequency !== frequency) return bestFrequency;
+    }
+
     if (lowerFrequency < MIN_FREQ) return frequency;
 
-    const midi = frequencyToMidi(frequency);
     const currentScore = periodicityAtFrequency(buffer, sampleRate, frequency);
     const lowerScore = periodicityAtFrequency(buffer, sampleRate, lowerFrequency);
     const currentMagnitude = spectralMagnitudeAtFrequency(buffer, sampleRate, frequency);
@@ -1807,6 +1910,7 @@ function summarizePitchFrames(frames) {
     const framesForMidi = midiFrames.get(bestMidi);
     const medianFrequency = median(framesForMidi.map(frame => frame.frequency));
     const medianCents = median(framesForMidi.map(frame => frame.cents));
+    const medianConfidence = median(framesForMidi.map(frame => frame.confidence || 0));
 
     return {
         note: midiToNote(bestMidi),
@@ -1814,6 +1918,7 @@ function summarizePitchFrames(frames) {
         pitchClass: ((bestMidi % 12) + 12) % 12,
         frequency: medianFrequency,
         cents: medianCents,
+        confidence: clamp((bestWeight / totalWeight) * medianConfidence, 0, 1),
     };
 }
 
@@ -1857,7 +1962,11 @@ function analyzeOfflineSegment(samples, sampleRate, segment) {
     const segmentBuffer = buildSegmentPitchBuffer(samples, sampleRate, segment, OFFLINE_ATTACK_SKIP_MS);
     const spectralNote = detectSpectralPitch(segmentBuffer, sampleRate, yinNote?.midi ?? null);
 
-    return mergePitchEstimates(yinNote, spectralNote);
+    return correctLowOctaveNoteFromSpectrum(
+        mergePitchEstimates(yinNote, spectralNote),
+        segmentBuffer,
+        sampleRate,
+    );
 }
 
 function getSegmentPitchTrace(samples, sampleRate, segment) {
@@ -2019,14 +2128,34 @@ function analyzePcmRecording(rawSamples, sampleRate) {
         })
         .filter(Boolean);
 
-    return {
+    const result = {
         ...normalized,
         durationMs,
         features,
-        notes: dedupeRecognizedNotes(notes, features, segmentation.thresholds),
+        notes: cleanupRecognizedNotes(dedupeRecognizedNotes(notes, features, segmentation.thresholds)),
         ...segmentation,
         segments,
     };
+
+    window.__soundToScaleLastAnalysis = {
+        durationMs,
+        peak: result.peak,
+        normalizationPeak: result.normalizationPeak,
+        rawRms: result.rawRms,
+        gain: result.gain,
+        thresholds: segmentation.thresholds,
+        ranges: segmentation.ranges,
+        segments,
+        notes: result.notes.map(note => note.note),
+        featureRms: {
+            min: percentile(features.map(frame => frame.rms), 0),
+            median: percentile(features.map(frame => frame.rms), 0.5),
+            p9: percentile(features.map(frame => frame.rms), 0.9),
+            max: Math.max(0, ...features.map(frame => frame.rms)),
+        },
+    };
+
+    return result;
 }
 
 function dedupeRecognizedNotes(notes, features = [], thresholds = null) {
@@ -2081,11 +2210,73 @@ function dedupeRecognizedNotes(notes, features = [], thresholds = null) {
     }, []);
 }
 
+function cleanupRecognizedNotes(notes) {
+    const octaveCorrected = notes.map((note, index) => {
+        const previous = notes[index - 1];
+        const next = notes[index + 1];
+        if (!previous || !next || note.midi >= 48 || previous.midi < 48 || next.midi < 48) return note;
+        if (Math.abs(previous.midi - next.midi) > 12) return note;
+
+        const target = (previous.midi + next.midi) / 2;
+        let bestMidi = note.midi;
+        let bestDistance = Number.POSITIVE_INFINITY;
+
+        for (let midi = note.pitchClass; midi <= 84; midi += 12) {
+            if (midi < 48) continue;
+            const distance = Math.abs(midi - target);
+            if (distance < bestDistance) {
+                bestMidi = midi;
+                bestDistance = distance;
+            }
+        }
+
+        if (bestMidi === note.midi || bestDistance > 7) return note;
+
+        return {
+            ...note,
+            note: midiToNote(bestMidi),
+            midi: bestMidi,
+            pitchClass: ((bestMidi % 12) + 12) % 12,
+            frequency: midiToFrequency(bestMidi),
+            cents: 0,
+        };
+    });
+
+    const cleaned = octaveCorrected.filter(note => {
+        const confidence = note.confidence ?? 0;
+        if (confidence > 0 && confidence < 0.42) return false;
+        if (note.midi < 36 && confidence < 0.82) return false;
+        if (note.midi > 96 && confidence < 0.82) return false;
+        return true;
+    });
+
+    while (
+        cleaned.length > 1
+        && (cleaned[0].startMs ?? 0) < 1200
+        && Math.abs(cleaned[0].midi - cleaned[1].midi) >= 18
+        && (cleaned[0].confidence ?? 0) < 0.88
+    ) {
+        cleaned.shift();
+    }
+
+    return cleaned.filter((note, index) => {
+        const confidence = note.confidence ?? 0;
+        if (confidence >= 0.68 || index === 0 || index === cleaned.length - 1) return true;
+
+        const previous = cleaned[index - 1];
+        const next = cleaned[index + 1];
+        const farFromBoth = Math.abs(note.midi - previous.midi) >= 12
+            && Math.abs(note.midi - next.midi) >= 12;
+
+        return !farFromBoth;
+    });
+}
+
 function getOfflineFailureMessage(result) {
     if (!result) return '';
     if (result.durationMs < OFFLINE_MIN_SEGMENT_MS) return '按住时间太短';
-    if (result.peak < 0.0008 || result.rawRms < 0.00025) return '几乎没有输入, 请检查麦克风';
-    if (result.ranges.length === 0) return '声音偏小, 已提高灵敏度';
+    if (result.peak < 0.00035 || result.rawRms < 0.00012) return '几乎没有输入, 请检查麦克风';
+    if (result.ranges.length === 0) return '声音偏小, 请提高播放音量或靠近麦克风';
     if (result.segments.length === 0) return '没有分出稳定音段';
     return '检测到声音, 但音高不够稳定';
 }
@@ -2458,3 +2649,5 @@ window.addEventListener('beforeunload', () => {
 
 setRecordingReviewState('idle');
 renderSequence();
+
+window.__soundToScaleDebugAnalyzePcm = analyzePcmRecording;

@@ -17,12 +17,18 @@ const MIN_PITCH_CONFIDENCE = 0.7;
 const PITCH_SUMMARY_MIN_FRAMES = 3;
 const YIN_THRESHOLD = 0.16;
 const YIN_FALLBACK_THRESHOLD = 0.24;
+const MPM_CLARITY_THRESHOLD = 0.58;
+const MPM_FALLBACK_CONFIDENCE = 0.86;
+const MPM_CANDIDATE_RATIO = 0.88;
 const OFFLINE_FRAME_MS = 32;
 const OFFLINE_HOP_MS = 12;
 const OFFLINE_ATTACK_SKIP_MS = 35;
 const OFFLINE_MIN_SEGMENT_MS = 120;
 const OFFLINE_ONSET_MIN_GAP_MS = 130;
 const OFFLINE_PITCH_SPLIT_MIN_MS = 150;
+const OFFLINE_BOUNDARY_PEAK_WINDOW_MS = 170;
+const OFFLINE_BOUNDARY_GUARD_MS = 28;
+const OFFLINE_BOUNDARY_DROP_RATIO = 0.55;
 const OFFLINE_SPECTRUM_MAX_FREQ = 5000;
 const DENOISE_FRAME_MS = 46;
 const DENOISE_NOISE_PROFILE_MS = 320;
@@ -114,7 +120,16 @@ function parabolicMinimum(values, index) {
     return index + clamp((left - right) / (2 * divisor), -0.5, 0.5);
 }
 
-function detectPitch(buffer, sampleRate, threshold) {
+function parabolicMaximum(values, index) {
+    const left = values[index - 1];
+    const center = values[index];
+    const right = values[index + 1];
+    const divisor = left - 2 * center + right;
+    if (!Number.isFinite(divisor) || Math.abs(divisor) < 0.000001) return index;
+    return index + clamp((left - right) / (2 * divisor), -0.5, 0.5);
+}
+
+function getPitchBufferStats(buffer) {
     let sum = 0;
     let sumSquares = 0;
     for (let i = 0; i < buffer.length; i += 1) {
@@ -124,9 +139,16 @@ function detectPitch(buffer, sampleRate, threshold) {
     }
 
     const rms = Math.sqrt(sumSquares / buffer.length);
-    if (rms < threshold) return { frequency: null, confidence: 0, rms, reason: 'quiet' };
-
     const mean = sum / buffer.length;
+    return { mean, rms };
+}
+
+function detectYinPitch(buffer, sampleRate, threshold, stats = getPitchBufferStats(buffer)) {
+    if (stats.rms < threshold) {
+        return { frequency: null, confidence: 0, rms: stats.rms, reason: 'quiet', method: 'yin' };
+    }
+
+    const mean = stats.mean;
     const minLag = Math.floor(sampleRate / MAX_FREQ);
     const maxLag = Math.min(Math.floor(sampleRate / MIN_FREQ), buffer.length - 1);
     const yin = new Float32Array(maxLag + 1);
@@ -176,7 +198,7 @@ function detectPitch(buffer, sampleRate, threshold) {
 
     const confidence = selectedLag > 0 ? 1 - yin[selectedLag] : Math.max(0, 1 - bestValue);
     if (selectedLag < 0 || confidence < MIN_PITCH_CONFIDENCE) {
-        return { frequency: null, confidence, rms, reason: 'unclear' };
+        return { frequency: null, confidence, rms: stats.rms, reason: 'unclear', method: 'yin' };
     }
 
     const refinedLag = selectedLag > 1 && selectedLag < maxLag
@@ -186,9 +208,107 @@ function detectPitch(buffer, sampleRate, threshold) {
     return {
         frequency: sampleRate / refinedLag,
         confidence,
-        rms,
+        rms: stats.rms,
         reason: 'pitched',
+        method: 'yin',
     };
+}
+
+function detectMpmPitch(buffer, sampleRate, threshold, stats = getPitchBufferStats(buffer)) {
+    if (stats.rms < threshold) {
+        return { frequency: null, confidence: 0, rms: stats.rms, reason: 'quiet', method: 'mpm' };
+    }
+
+    const minLag = Math.floor(sampleRate / MAX_FREQ);
+    const maxLag = Math.min(Math.floor(sampleRate / MIN_FREQ), buffer.length - 2);
+    const centered = new Float32Array(buffer.length);
+    const squarePrefix = new Float64Array(buffer.length + 1);
+
+    for (let index = 0; index < buffer.length; index += 1) {
+        const sample = buffer[index] - stats.mean;
+        centered[index] = sample;
+        squarePrefix[index + 1] = squarePrefix[index] + sample * sample;
+    }
+
+    const nsdf = new Float32Array(maxLag + 1);
+    let highestPeak = 0;
+    const peaks = [];
+
+    for (let tau = minLag; tau <= maxLag; tau += 1) {
+        const size = buffer.length - tau;
+        let correlation = 0;
+
+        for (let index = 0; index < size; index += 1) {
+            correlation += centered[index] * centered[index + tau];
+        }
+
+        const energy = squarePrefix[size] + squarePrefix[buffer.length] - squarePrefix[tau];
+        nsdf[tau] = energy > 0 ? (2 * correlation) / energy : 0;
+    }
+
+    for (let tau = minLag + 1; tau < maxLag; tau += 1) {
+        const value = nsdf[tau];
+        if (value <= 0 || value < nsdf[tau - 1] || value < nsdf[tau + 1]) continue;
+        highestPeak = Math.max(highestPeak, value);
+        peaks.push({ tau, value });
+    }
+
+    if (highestPeak < MPM_CLARITY_THRESHOLD || peaks.length === 0) {
+        return {
+            frequency: null,
+            confidence: Math.max(0, highestPeak),
+            rms: stats.rms,
+            reason: 'unclear',
+            method: 'mpm',
+        };
+    }
+
+    const selected = peaks.find(peak => peak.value >= highestPeak * MPM_CANDIDATE_RATIO) || peaks[0];
+    const refinedLag = selected.tau > minLag && selected.tau < maxLag
+        ? parabolicMaximum(nsdf, selected.tau)
+        : selected.tau;
+
+    return {
+        frequency: sampleRate / refinedLag,
+        confidence: clamp(selected.value, 0, 1),
+        rms: stats.rms,
+        reason: 'pitched',
+        method: 'mpm',
+    };
+}
+
+function choosePitchResult(yin, mpm) {
+    if (!mpm.frequency) return yin;
+    if (!yin.frequency) return mpm.confidence >= MIN_PITCH_CONFIDENCE ? mpm : yin;
+
+    const yinMidi = frequencyToMidi(yin.frequency);
+    const mpmMidi = frequencyToMidi(mpm.frequency);
+    const distance = Math.abs(yinMidi - mpmMidi);
+
+    if (distance === 0) {
+        return {
+            ...yin,
+            frequency: (yin.frequency * yin.confidence + mpm.frequency * mpm.confidence)
+                / Math.max(0.001, yin.confidence + mpm.confidence),
+            confidence: Math.max(yin.confidence, mpm.confidence),
+            method: 'yin+mpm',
+        };
+    }
+
+    if (mpm.confidence >= MPM_FALLBACK_CONFIDENCE && yin.confidence < 0.9) {
+        return mpm;
+    }
+
+    return yin;
+}
+
+function detectPitch(buffer, sampleRate, threshold) {
+    const stats = getPitchBufferStats(buffer);
+    const yin = detectYinPitch(buffer, sampleRate, threshold, stats);
+    if (yin.frequency && yin.confidence >= 0.92) return yin;
+
+    const mpm = detectMpmPitch(buffer, sampleRate, threshold, stats);
+    return choosePitchResult(yin, mpm);
 }
 
 function setStatus(text) {
@@ -1260,6 +1380,61 @@ function getFeatureAtTime(features, timeMs) {
     return best;
 }
 
+function getFeaturePeakInWindow(features, startMs, endMs) {
+    return features.reduce((peak, frame) => {
+        if (frame.time < startMs || frame.time > endMs) return peak;
+        return Math.max(peak, frame.rms);
+    }, 0);
+}
+
+function getFeatureMinimumInWindow(features, startMs, endMs) {
+    let minimum = Number.POSITIVE_INFINITY;
+
+    features.forEach(frame => {
+        if (frame.time < startMs || frame.time > endMs) return;
+        minimum = Math.min(minimum, frame.rms);
+    });
+
+    return Number.isFinite(minimum) ? minimum : 0;
+}
+
+function hasReattackBoundary(timeMs, features, thresholds, range = null) {
+    const safeStart = range?.startMs ?? 0;
+    const safeEnd = range?.endMs ?? Number.POSITIVE_INFINITY;
+    const beforeStart = Math.max(safeStart, timeMs - OFFLINE_BOUNDARY_PEAK_WINDOW_MS);
+    const beforeEnd = Math.max(safeStart, timeMs - OFFLINE_BOUNDARY_GUARD_MS);
+    const afterStart = Math.min(safeEnd, timeMs + OFFLINE_BOUNDARY_GUARD_MS);
+    const afterEnd = Math.min(safeEnd, timeMs + OFFLINE_BOUNDARY_PEAK_WINDOW_MS);
+    const valleyStart = Math.max(safeStart, timeMs - OFFLINE_BOUNDARY_GUARD_MS);
+    const valleyEnd = Math.min(safeEnd, timeMs + OFFLINE_BOUNDARY_GUARD_MS);
+    const beforePeak = getFeaturePeakInWindow(features, beforeStart, beforeEnd);
+    const afterPeak = getFeaturePeakInWindow(features, afterStart, afterEnd);
+    const valley = getFeatureMinimumInWindow(features, valleyStart, valleyEnd);
+    const peakFloor = Math.max(thresholds.activeRms * 1.18, thresholds.noiseRms * 3.2);
+    const hasEnergyOnBothSides = beforePeak >= peakFloor && afterPeak >= peakFloor;
+    const hasDeepValley = valley <= Math.min(beforePeak, afterPeak) * OFFLINE_BOUNDARY_DROP_RATIO
+        || valley <= thresholds.activeRms * 0.82;
+
+    return hasEnergyOnBothSides && hasDeepValley;
+}
+
+function backtrackBoundaryToEnergyMinimum(timeMs, features, range) {
+    const windowStart = Math.max(range.startMs, timeMs - 120);
+    const windowEnd = Math.min(range.endMs, timeMs + 24);
+    const candidates = features.filter(frame => frame.time >= windowStart && frame.time <= windowEnd);
+    if (candidates.length === 0) return timeMs;
+
+    let best = candidates[0];
+    for (let index = 1; index < candidates.length; index += 1) {
+        const frame = candidates[index];
+        if (frame.rms < best.rms || (frame.rms === best.rms && frame.time < best.time)) {
+            best = frame;
+        }
+    }
+
+    return clamp(best.time, range.startMs, range.endMs);
+}
+
 function normalizeBoundaryPoints(points, range) {
     return [...points]
         .sort((a, b) => a - b)
@@ -1331,7 +1506,10 @@ function createOfflineSegments(features, durationMs) {
             const hasRoomAfter = range.endMs - onset > OFFLINE_MIN_SEGMENT_MS * 0.5;
             const farFromPrevious = onset - points[points.length - 1] >= OFFLINE_ONSET_MIN_GAP_MS;
             if (onset > range.startMs && onset < range.endMs && farFromStart && hasRoomAfter && farFromPrevious) {
-                points.push(onset);
+                const boundary = backtrackBoundaryToEnergyMinimum(onset, features, range);
+                if (hasReattackBoundary(boundary, features, thresholds, range)) {
+                    points.push(boundary);
+                }
             }
         });
         points.push(...findEnergyValleySplits(range, features, thresholds));
@@ -1750,7 +1928,7 @@ function findPitchSplitPoints(samples, sampleRate, segment) {
     return splits;
 }
 
-function findReattackSplitPoints(features, segment) {
+function findReattackSplitPoints(features, segment, thresholds = null) {
     const inside = features.filter(frame => frame.time > segment.startMs && frame.time < segment.endMs);
     if (inside.length < 6 || segment.endMs - segment.startMs < OFFLINE_PITCH_SPLIT_MIN_MS * 2) return [];
 
@@ -1762,11 +1940,16 @@ function findReattackSplitPoints(features, segment) {
         const current = inside[index];
         const previousHigh = Math.max(inside[index - 1].rms, inside[index - 2].rms);
         const nextHigh = Math.max(inside[index + 1].rms, inside[index + 2].rms);
-        const valley = current.rms < highRms * 0.52 && current.rms < previousHigh * 0.72 && current.rms < nextHigh * 0.72;
+        const valley = current.rms < highRms * 0.45
+            && current.rms < previousHigh * 0.62
+            && current.rms < nextHigh * 0.62;
         const enoughBefore = current.time - lastSplit >= OFFLINE_PITCH_SPLIT_MIN_MS;
         const enoughAfter = segment.endMs - current.time >= OFFLINE_PITCH_SPLIT_MIN_MS;
 
-        if (valley && enoughBefore && enoughAfter) {
+        const reattackSupported = !thresholds
+            || hasReattackBoundary(current.time, features, thresholds, segment);
+
+        if (valley && enoughBefore && enoughAfter && reattackSupported) {
             splits.push(current.time);
             lastSplit = current.time;
         }
@@ -1775,14 +1958,14 @@ function findReattackSplitPoints(features, segment) {
     return splits;
 }
 
-function splitSegmentsByPitch(samples, sampleRate, segments, features = []) {
+function splitSegmentsByPitch(samples, sampleRate, segments, features = [], thresholds = null) {
     const refined = [];
 
     segments.forEach(segment => {
         const splitPoints = normalizeBoundaryPoints([
             segment.startMs,
             ...findPitchSplitPoints(samples, sampleRate, segment),
-            ...findReattackSplitPoints(features, segment),
+            ...findReattackSplitPoints(features, segment, thresholds),
             segment.endMs,
         ], segment).slice(1, -1);
         if (splitPoints.length === 0) {
@@ -1808,7 +1991,13 @@ function analyzePcmRecording(rawSamples, sampleRate) {
     const features = createOfflineFeatureFrames(normalized.samples, sampleRate);
     const segmentation = createOfflineSegments(features, durationMs);
     const segments = refineSegmentsByEnergy(
-        splitSegmentsByPitch(normalized.samples, sampleRate, segmentation.segments, features),
+        splitSegmentsByPitch(
+            normalized.samples,
+            sampleRate,
+            segmentation.segments,
+            features,
+            segmentation.thresholds,
+        ),
         features,
         segmentation.thresholds,
     );
@@ -1834,13 +2023,13 @@ function analyzePcmRecording(rawSamples, sampleRate) {
         ...normalized,
         durationMs,
         features,
-        notes: dedupeRecognizedNotes(notes),
+        notes: dedupeRecognizedNotes(notes, features, segmentation.thresholds),
         ...segmentation,
         segments,
     };
 }
 
-function dedupeRecognizedNotes(notes) {
+function dedupeRecognizedNotes(notes, features = [], thresholds = null) {
     return notes.reduce((result, note) => {
         const previous = result[result.length - 1];
         if (!previous) {
@@ -1850,6 +2039,13 @@ function dedupeRecognizedNotes(notes) {
 
         const duration = (note.endMs ?? 0) - (note.startMs ?? 0);
         const sameMidi = note.midi === previous.midi;
+        const boundaryTime = ((previous.endMs ?? 0) + (note.startMs ?? 0)) / 2;
+        const hasBoundaryReattack = thresholds
+            ? hasReattackBoundary(boundaryTime, features, thresholds, {
+                startMs: previous.startMs ?? boundaryTime - OFFLINE_BOUNDARY_PEAK_WINDOW_MS,
+                endMs: note.endMs ?? boundaryTime + OFFLINE_BOUNDARY_PEAK_WINDOW_MS,
+            })
+            : false;
         const shortTail = duration > 0 && duration < OFFLINE_MIN_SEGMENT_MS * 1.4;
         const weakTail = previous.segmentRms
             && note.segmentRms
@@ -1864,6 +2060,13 @@ function dedupeRecognizedNotes(notes) {
 
         if (weakTail) {
             previous.endMs = Math.max(previous.endMs ?? 0, note.endMs ?? 0);
+            return result;
+        }
+
+        if (sameMidi && !hasBoundaryReattack) {
+            previous.endMs = Math.max(previous.endMs ?? 0, note.endMs ?? 0);
+            previous.confidence = Math.max(previous.confidence || 0, note.confidence || 0);
+            previous.segmentRms = Math.max(previous.segmentRms || 0, note.segmentRms || 0);
             return result;
         }
 

@@ -20,6 +20,16 @@ export const DEFAULT_AI_CONFIG = Object.freeze({
   systemPrompt: '',
 });
 
+export const AI_PROVIDER_DEFAULTS = Object.freeze({
+  custom: { apiUrl: '', model: DEFAULT_AI_CONFIG.model },
+  openai: { apiUrl: 'https://api.openai.com/v1', model: DEFAULT_AI_CONFIG.model },
+  deepseek: { apiUrl: 'https://api.deepseek.com', model: 'deepseek-chat' },
+  claude: {
+    apiUrl: 'https://api.anthropic.com/v1/messages',
+    model: 'claude-3-sonnet-20240229',
+  },
+});
+
 const SESSION_API_KEY = 'ai:sessionApiKey';
 
 function getSessionApiKey() {

@@ -1,49 +1,93 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>琴键之旅 - 光阴的游乐场</title>
-</head>
-<body>
+  </head>
+  <body>
     <div class="container">
-        <a href="../settings/" class="settings-link" title="设置">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-            </svg>
-        </a>
+      <a href="../settings/" class="settings-link" title="设置">
+        <svg
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="12" cy="12" r="3"></circle>
+          <path
+            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+          ></path>
+        </svg>
+      </a>
 
-        <header>
-            <h1>琴键之旅</h1>
-            <nav>
-                <ul>
-                    <li><a href="../../index.html#music">← 返回</a></li>
-                    <li><a href="#" class="active">音乐练习</a></li>
-                </ul>
-            </nav>
-        </header>
+      <header>
+        <h1>琴键之旅</h1>
+        <nav>
+          <ul>
+            <li><a href="../../index.html#music">← 返回</a></li>
+            <li><a href="#" class="active">音乐练习</a></li>
+          </ul>
+        </nav>
+      </header>
 
-        <main>
-            <section id="music" class="section active">
-                <div class="music-options" role="tablist" aria-label="音乐练习模式">
-                    <button class="music-card active" id="scales-training" type="button" role="tab" aria-controls="scales-training-container">音阶练习</button>
-                    <button class="music-card" id="single-note" type="button" role="tab" aria-controls="single-note-container">单音辨听</button>
-                    <button class="music-card" id="multi-note" type="button" role="tab" aria-controls="multi-note-container">多音辨听</button>
-                </div>
+      <main>
+        <section id="music" class="section active">
+          <div class="music-options" role="tablist" aria-label="音乐练习模式">
+            <button
+              class="music-card active"
+              id="scales-training"
+              type="button"
+              role="tab"
+              aria-controls="scales-training-container"
+            >
+              音阶练习
+            </button>
+            <button
+              class="music-card"
+              id="single-note"
+              type="button"
+              role="tab"
+              aria-controls="single-note-container"
+            >
+              单音辨听
+            </button>
+            <button
+              class="music-card"
+              id="multi-note"
+              type="button"
+              role="tab"
+              aria-controls="multi-note-container"
+            >
+              多音辨听
+            </button>
+            <button
+              class="music-card"
+              id="interval-training"
+              type="button"
+              role="tab"
+              aria-controls="interval-training-container"
+            >
+              音程训练
+            </button>
+          </div>
 
-                <div id="scales-training-container" class="music-container" style="display: block;"></div>
-                <div id="single-note-container" class="music-container"></div>
-                <div id="multi-note-container" class="music-container"></div>
+          <div id="scales-training-container" class="music-container" style="display: block"></div>
+          <div id="single-note-container" class="music-container"></div>
+          <div id="multi-note-container" class="music-container"></div>
+          <div id="interval-training-container" class="music-container"></div>
+        </section>
+      </main>
 
-            </section>
-        </main>
-
-        <footer>
-            <p>&copy; 2023 光阴的游乐场</p>
-        </footer>
+      <footer>
+        <p>&copy; 2023 光阴的游乐场</p>
+      </footer>
     </div>
 
     <script type="module" src="./main.js"></script>
-</body>
+  </body>
 </html>

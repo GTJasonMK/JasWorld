@@ -5,872 +5,879 @@
 
 /* ========== 主页样式 ========== */
 .ct-main {
-    padding: 0;
+  padding: 0;
 }
 
 .ct-header {
-    text-align: center;
-    padding: 40px 20px;
-    background: var(--container-bg);
-    border-radius: 10px;
-    margin-bottom: 30px;
+  text-align: center;
+  padding: 40px 20px;
+  background: var(--container-bg);
+  border-radius: 10px;
+  margin-bottom: 30px;
 }
 
 .ct-header h1 {
-    margin: 0 0 10px 0;
-    color: var(--primary-color);
+  margin: 0 0 10px 0;
+  color: var(--primary-color);
 }
 
 .subtitle {
-    color: var(--text-color);
-    opacity: 0.7;
+  color: var(--text-color);
+  opacity: 0.7;
 }
 
 .back-btn {
-    display: inline-block;
-    padding: 8px 16px;
-    background: var(--button-bg);
-    color: var(--text-color);
-    text-decoration: none;
-    border-radius: 5px;
-    transition: all 0.3s;
+  display: inline-block;
+  padding: 8px 16px;
+  background: var(--button-bg);
+  color: var(--text-color);
+  text-decoration: none;
+  border-radius: 5px;
+  transition: all 0.3s;
 }
 
 .back-btn:hover {
-    background: var(--button-hover);
+  background: var(--button-hover);
 }
 
 /* 快速导入区 */
 .quick-import {
-    margin-bottom: 40px;
+  margin-bottom: 40px;
 }
 
 .import-card {
-    background: var(--container-bg);
-    padding: 40px;
-    border-radius: 10px;
-    text-align: center;
-    border: 2px dashed var(--primary-color);
-    transition: all 0.3s;
+  background: var(--container-bg);
+  padding: 40px;
+  border-radius: 10px;
+  text-align: center;
+  border: 2px dashed var(--primary-color);
+  transition: all 0.3s;
 }
 
 .import-card:hover {
-    border-color: var(--accent-color);
-    transform: translateY(-2px);
+  border-color: var(--accent-color);
+  transform: translateY(-2px);
 }
 
 .import-icon {
-    font-size: 48px;
-    margin-bottom: 20px;
+  font-size: 48px;
+  margin-bottom: 20px;
 }
 
 .import-card h3 {
-    margin: 0 0 10px 0;
+  margin: 0 0 10px 0;
 }
 
 .import-card p {
-    margin: 10px 0;
-    opacity: 0.8;
+  margin: 10px 0;
+  opacity: 0.8;
 }
 
 .import-card small {
-    display: block;
-    margin-top: 15px;
-    opacity: 0.6;
+  display: block;
+  margin-top: 15px;
+  opacity: 0.6;
 }
 
 .import-help {
-    margin-top: 20px;
-    padding-top: 15px;
-    border-top: 1px dashed var(--box-shadow-color);
-    font-size: 0.9rem;
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px dashed var(--box-shadow-color);
+  font-size: 0.9rem;
 }
 
 .import-help p {
-    margin: 8px 0;
-    opacity: 0.8;
+  margin: 8px 0;
+  opacity: 0.8;
 }
 
 .import-help a {
-    color: var(--primary-color);
-    text-decoration: none;
-    font-weight: bold;
+  color: var(--primary-color);
+  text-decoration: none;
+  font-weight: bold;
 }
 
 .import-help a:hover {
-    text-decoration: underline;
+  text-decoration: underline;
 }
 
 body.dragging .import-card {
-    border-color: var(--accent-color);
-    background: var(--primary-color-transparent, rgba(108, 99, 255, 0.1));
+  border-color: var(--accent-color);
+  background: var(--primary-color-transparent, rgba(108, 99, 255, 0.1));
 }
 
 /* 角色网格 */
 .characters-section h2 {
-    margin-bottom: 20px;
+  margin-bottom: 20px;
 }
 
 .character-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 20px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
 }
 
 .character-card {
-    background: var(--container-bg);
-    border-radius: 10px;
-    overflow: hidden;
-    transition: all 0.3s;
-    box-shadow: 0 2px 10px var(--box-shadow-color);
+  background: var(--container-bg);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: all 0.3s;
+  box-shadow: 0 2px 10px var(--box-shadow-color);
 }
 
 .character-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 5px 20px var(--box-shadow-color);
+  transform: translateY(-5px);
+  box-shadow: 0 5px 20px var(--box-shadow-color);
 }
 
 .character-avatar {
-    width: 100%;
-    height: 200px;
-    overflow: hidden;
-    background: var(--primary-color);
+  width: 100%;
+  height: 200px;
+  overflow: hidden;
+  background: var(--primary-color);
 }
 
 .character-avatar img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .character-info {
-    padding: 15px;
+  padding: 15px;
 }
 
 .character-name {
-    margin: 0 0 10px 0;
-    font-size: 1.2rem;
-    color: var(--primary-color);
+  margin: 0 0 10px 0;
+  font-size: 1.2rem;
+  color: var(--primary-color);
 }
 
 .character-desc {
-    margin: 0 0 10px 0;
-    font-size: 0.9rem;
-    opacity: 0.8;
-    line-height: 1.4;
+  margin: 0 0 10px 0;
+  font-size: 0.9rem;
+  opacity: 0.8;
+  line-height: 1.4;
 }
 
 .character-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
 }
 
 .tag {
-    display: inline-block;
-    padding: 3px 8px;
-    background: var(--primary-color-transparent, rgba(108, 99, 255, 0.2));
-    border-radius: 12px;
-    font-size: 0.8rem;
+  display: inline-block;
+  padding: 3px 8px;
+  background: var(--primary-color-transparent, rgba(108, 99, 255, 0.2));
+  border-radius: 12px;
+  font-size: 0.8rem;
 }
 
 .character-actions {
-    padding: 15px;
-    display: flex;
-    gap: 10px;
-    border-top: 1px solid var(--box-shadow-color);
+  padding: 15px;
+  display: flex;
+  gap: 10px;
+  border-top: 1px solid var(--box-shadow-color);
 }
 
 .btn-chat {
-    flex: 1;
-    padding: 10px;
-    background: var(--primary-color);
-    color: white;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    font-weight: bold;
-    transition: all 0.3s;
+  flex: 1;
+  padding: 10px;
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: all 0.3s;
 }
 
 .btn-chat:hover {
-    background: var(--accent-color);
-    transform: scale(1.05);
+  background: var(--accent-color);
+  transform: scale(1.05);
 }
 
 .btn-edit {
-    padding: 10px 15px;
-    background: var(--button-bg);
-    color: var(--text-color);
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: all 0.3s;
+  padding: 10px 15px;
+  background: var(--button-bg);
+  color: var(--text-color);
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.3s;
 }
 
 .btn-edit:hover {
-    background: var(--button-hover);
-    transform: scale(1.05);
+  background: var(--button-hover);
+  transform: scale(1.05);
 }
 
 .btn-delete {
-    padding: 10px 15px;
-    background: #ff4444;
-    color: white;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: all 0.3s;
+  padding: 10px 15px;
+  background: #ff4444;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.3s;
 }
 
 .btn-delete:hover {
-    background: #cc0000;
+  background: #cc0000;
 }
 
 /* 空状态 */
 .empty-state {
-    text-align: center;
-    padding: 60px 20px;
-    opacity: 0.6;
+  text-align: center;
+  padding: 60px 20px;
+  opacity: 0.6;
 }
 
 .empty-icon {
-    font-size: 64px;
-    margin-bottom: 20px;
+  font-size: 64px;
+  margin-bottom: 20px;
 }
 
 .empty-state h3 {
-    margin: 0 0 10px 0;
+  margin: 0 0 10px 0;
 }
 
 .empty-state .hint {
-    font-size: 0.9rem;
-    margin-top: 20px;
+  font-size: 0.9rem;
+  margin-top: 20px;
 }
 
 /* 指南网格 */
 .guide-section {
-    margin-top: 60px;
-    padding: 40px 0;
+  margin-top: 60px;
+  padding: 40px 0;
 }
 
 .guide-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 20px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
 }
 
 .guide-card {
-    background: var(--container-bg);
-    padding: 20px;
-    border-radius: 10px;
-    border-left: 4px solid var(--primary-color);
+  background: var(--container-bg);
+  padding: 20px;
+  border-radius: 10px;
+  border-left: 4px solid var(--primary-color);
 }
 
 .guide-card h3 {
-    margin: 0 0 10px 0;
+  margin: 0 0 10px 0;
 }
 
 /* ========== 对话页面样式 ========== */
 .chat-container {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    background: var(--bg-color);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg-color);
 }
 
 .chat-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 15px 20px;
-    background: var(--container-bg);
-    border-bottom: 1px solid var(--box-shadow-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 15px 20px;
+  background: var(--container-bg);
+  border-bottom: 1px solid var(--box-shadow-color);
 }
 
 .chat-header h2 {
-    margin: 0;
-    font-size: 1.2rem;
-    flex: 1;
-    text-align: center;
+  margin: 0;
+  font-size: 1.2rem;
+  flex: 1;
+  text-align: center;
 }
 
 .btn-menu {
-    background: transparent;
-    border: none;
-    font-size: 1.5rem;
-    cursor: pointer;
-    color: var(--text-color);
-    text-decoration: none;
+  background: transparent;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--text-color);
+  text-decoration: none;
 }
 
 .chat-main {
-    flex: 1;
-    overflow-y: auto;
-    padding: 20px;
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
 }
 
 .chat-main.streaming-active {
-    overflow-anchor: none;
+  overflow-anchor: none;
 }
 
 .message-list {
-    max-width: 800px;
-    margin: 0 auto;
+  max-width: 800px;
+  margin: 0 auto;
 }
 
 .message-list.streaming-active {
-    overflow-anchor: none;
+  overflow-anchor: none;
 }
 
 .message {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    margin-bottom: 20px;
-    animation: messageSlideIn 0.3s ease-out;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 20px;
+  animation: messageSlideIn 0.3s ease-out;
 }
 
 .message.streaming {
-    animation: none;
+  animation: none;
 }
 
 @keyframes messageSlideIn {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .message-avatar {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: var(--primary-color);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-weight: bold;
-    flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--primary-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  flex-shrink: 0;
 }
 
 .message-bubble {
-    background: var(--container-bg);
-    padding: 12px 16px;
-    border-radius: 18px;
-    max-width: 70%;
-    line-height: 1.5;
-    overflow-wrap: anywhere;
-    white-space: pre-wrap;
+  background: var(--container-bg);
+  padding: 12px 16px;
+  border-radius: 18px;
+  max-width: 70%;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .message-user {
-    flex-direction: row-reverse;
+  flex-direction: row-reverse;
 }
 
 .message-user .message-avatar {
-    background: var(--accent-color);
+  background: var(--accent-color);
 }
 
 .message-user .message-bubble {
-    background: var(--primary-color);
-    color: white;
+  background: var(--primary-color);
+  color: white;
 }
 
 .message-system .message-bubble {
-    background: #ff4444;
-    color: white;
+  background: #ff4444;
+  color: white;
 }
 
 .message.streaming .message-bubble::after {
-    content: '▍';
-    display: inline-block;
-    margin-left: 2px;
-    color: var(--primary-color);
-    animation: streamCursorBlink 1s steps(2, start) infinite;
+  content: '▍';
+  display: inline-block;
+  margin-left: 2px;
+  color: var(--primary-color);
+  animation: streamCursorBlink 1s steps(2, start) infinite;
 }
 
 @keyframes streamCursorBlink {
-    0%, 45% { opacity: 1; }
-    46%, 100% { opacity: 0; }
+  0%,
+  45% {
+    opacity: 1;
+  }
+  46%,
+  100% {
+    opacity: 0;
+  }
 }
 
 .chat-footer {
-    padding: 15px 20px;
-    background: var(--container-bg);
-    border-top: 1px solid var(--box-shadow-color);
+  padding: 15px 20px;
+  background: var(--container-bg);
+  border-top: 1px solid var(--box-shadow-color);
 }
 
 .input-wrapper {
-    max-width: 800px;
-    margin: 0 auto;
-    display: flex;
-    gap: 10px;
+  max-width: 800px;
+  margin: 0 auto;
+  display: flex;
+  gap: 10px;
 }
 
 #messageInput {
-    flex: 1;
-    padding: 12px 16px;
-    border: 1px solid var(--box-shadow-color);
-    border-radius: 20px;
-    background: var(--bg-color);
-    color: var(--text-color);
-    resize: none;
-    font-family: inherit;
-    font-size: 1rem;
-    max-height: 120px;
+  flex: 1;
+  padding: 12px 16px;
+  border: 1px solid var(--box-shadow-color);
+  border-radius: 20px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  resize: none;
+  font-family: inherit;
+  font-size: 1rem;
+  max-height: 120px;
 }
 
 #messageInput:focus {
-    outline: none;
-    border-color: var(--primary-color);
+  outline: none;
+  border-color: var(--primary-color);
 }
 
 .btn-send {
-    padding: 12px 24px;
-    background: var(--primary-color);
-    color: white;
-    border: none;
-    border-radius: 20px;
-    cursor: pointer;
-    font-weight: bold;
-    transition: all 0.3s;
+  padding: 12px 24px;
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 20px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: all 0.3s;
 }
 
 .btn-send:hover {
-    background: var(--accent-color);
-    transform: scale(1.05);
+  background: var(--accent-color);
+  transform: scale(1.05);
 }
 
 .btn-send:active {
-    transform: scale(0.95);
+  transform: scale(0.95);
 }
 
 /* ========== AI配置模态窗口 ========== */
 .modal {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.7);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
 }
 
 .modal-content {
-    background: var(--container-bg);
-    border-radius: 10px;
-    max-width: 500px;
-    width: 90%;
-    max-height: 90vh;
-    overflow-y: auto;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  background: var(--container-bg);
+  border-radius: 10px;
+  max-width: 500px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
 }
 
 .modal-large {
-    max-width: 700px;
+  max-width: 700px;
 }
 
 .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 20px;
-    border-bottom: 1px solid var(--box-shadow-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid var(--box-shadow-color);
 }
 
 .modal-header h3 {
-    margin: 0;
+  margin: 0;
 }
 
 .modal-close {
-    background: none;
-    border: none;
-    font-size: 2rem;
-    color: var(--text-color);
-    cursor: pointer;
-    line-height: 1;
-    padding: 0;
-    width: 30px;
-    height: 30px;
+  background: none;
+  border: none;
+  font-size: 2rem;
+  color: var(--text-color);
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  width: 30px;
+  height: 30px;
 }
 
 .modal-close:hover {
-    color: var(--primary-color);
+  color: var(--primary-color);
 }
 
 .modal-body {
-    padding: 20px;
+  padding: 20px;
 }
 
 .config-section {
-    margin-bottom: 20px;
+  margin-bottom: 20px;
 }
 
 .config-section h4 {
-    margin: 30px 0 15px 0;
-    padding-bottom: 10px;
-    border-bottom: 2px solid var(--primary-color);
-    color: var(--primary-color);
-    font-size: 1.1rem;
+  margin: 30px 0 15px 0;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--primary-color);
+  color: var(--primary-color);
+  font-size: 1.1rem;
 }
 
 .config-section h4:first-child {
-    margin-top: 0;
+  margin-top: 0;
 }
 
 .config-section label {
-    display: block;
-    margin-bottom: 8px;
-    font-weight: bold;
-    color: var(--text-color);
+  display: block;
+  margin-bottom: 8px;
+  font-weight: bold;
+  color: var(--text-color);
 }
 
 .config-label {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
 }
 
-.config-label input[type="checkbox"] {
-    width: 20px;
-    height: 20px;
-    cursor: pointer;
+.config-label input[type='checkbox'] {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
 }
 
 .config-input,
-.config-select,
 .config-textarea {
-    width: 100%;
-    padding: 10px;
-    border: 1px solid var(--box-shadow-color);
-    border-radius: 5px;
-    background: var(--bg-color);
-    color: var(--text-color);
-    font-size: 1rem;
-    font-family: inherit;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--box-shadow-color);
+  border-radius: 5px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  font-size: 1rem;
+  font-family: inherit;
+}
+
+.config-select {
+  width: 100%;
 }
 
 .config-textarea {
-    resize: vertical;
-    min-height: 60px;
-    line-height: 1.5;
+  resize: vertical;
+  min-height: 60px;
+  line-height: 1.5;
 }
 
 .config-input:focus,
-.config-select:focus,
 .config-textarea:focus {
-    outline: none;
-    border-color: var(--primary-color);
+  outline: none;
+  border-color: var(--primary-color);
 }
 
 .config-hint {
-    margin: 5px 0 0 0;
-    font-size: 0.85rem;
-    opacity: 0.7;
+  margin: 5px 0 0 0;
+  font-size: 0.85rem;
+  opacity: 0.7;
 }
 
 .modal-footer {
-    padding: 20px;
-    border-top: 1px solid var(--box-shadow-color);
-    display: flex;
-    gap: 10px;
-    justify-content: flex-end;
+  padding: 20px;
+  border-top: 1px solid var(--box-shadow-color);
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
 }
 
 .btn-secondary {
-    background: var(--button-bg);
-    color: var(--text-color);
+  background: var(--button-bg);
+  color: var(--text-color);
 }
 
 .btn-secondary:hover {
-    background: var(--button-hover);
+  background: var(--button-hover);
 }
 
 /* ========== 响应式设计 ========== */
 
 /* 平板及以下 (< 768px) */
 @media (max-width: 768px) {
-    .character-grid {
-        grid-template-columns: 1fr;
-    }
+  .character-grid {
+    grid-template-columns: 1fr;
+  }
 
-    .guide-grid {
-        grid-template-columns: 1fr;
-    }
+  .guide-grid {
+    grid-template-columns: 1fr;
+  }
 
-    .message-bubble {
-        max-width: 85%;
-    }
+  .message-bubble {
+    max-width: 85%;
+  }
 
-    .chat-header h2 {
-        font-size: 1rem;
-    }
+  .chat-header h2 {
+    font-size: 1rem;
+  }
 
-    .ct-header {
-        padding: 30px 15px;
-    }
+  .ct-header {
+    padding: 30px 15px;
+  }
 
-    .import-card {
-        padding: 30px 20px;
-    }
+  .import-card {
+    padding: 30px 20px;
+  }
 
-    .modal-content {
-        width: 95%;
-        max-height: 95vh;
-    }
+  .modal-content {
+    width: 95%;
+    max-height: 95vh;
+  }
 }
 
 /* 手机设备 (< 480px) */
 @media (max-width: 480px) {
-    /* 容器和间距优化 */
-    .ct-header {
-        padding: 20px 12px;
-        margin-bottom: 20px;
-    }
+  /* 容器和间距优化 */
+  .ct-header {
+    padding: 20px 12px;
+    margin-bottom: 20px;
+  }
 
-    .ct-header h1 {
-        font-size: 1.5rem;
-    }
+  .ct-header h1 {
+    font-size: 1.5rem;
+  }
 
-    .subtitle {
-        font-size: 0.9rem;
-    }
+  .subtitle {
+    font-size: 0.9rem;
+  }
 
-    /* 按钮最小尺寸 - 符合44x44px触摸目标 */
-    .back-btn,
-    .btn,
-    .btn-primary,
-    .btn-secondary,
-    .btn-chat,
-    .btn-edit,
-    .btn-delete,
-    .btn-send {
-        min-height: 44px;
-        min-width: 44px;
-        padding: 12px 16px;
-    }
+  /* 按钮最小尺寸 - 符合44x44px触摸目标 */
+  .back-btn,
+  .btn,
+  .btn-primary,
+  .btn-secondary,
+  .btn-chat,
+  .btn-edit,
+  .btn-delete,
+  .btn-send {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 12px 16px;
+  }
 
-    .btn-menu,
-    .modal-close {
-        min-width: 44px;
-        min-height: 44px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
+  .btn-menu,
+  .modal-close {
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 
-    /* 导入卡片 */
-    .import-card {
-        padding: 20px 15px;
-    }
+  /* 导入卡片 */
+  .import-card {
+    padding: 20px 15px;
+  }
 
-    .import-icon {
-        font-size: 36px;
-        margin-bottom: 15px;
-    }
+  .import-icon {
+    font-size: 36px;
+    margin-bottom: 15px;
+  }
 
-    .import-card h3 {
-        font-size: 1.1rem;
-    }
+  .import-card h3 {
+    font-size: 1.1rem;
+  }
 
-    .import-card p,
-    .import-card small {
-        font-size: 0.85rem;
-    }
+  .import-card p,
+  .import-card small {
+    font-size: 0.85rem;
+  }
 
-    /* 角色卡片优化 */
-    .character-grid {
-        grid-template-columns: 1fr;
-        gap: 15px;
-    }
+  /* 角色卡片优化 */
+  .character-grid {
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
 
-    .character-avatar {
-        height: 180px;
-    }
+  .character-avatar {
+    height: 180px;
+  }
 
-    .character-info {
-        padding: 12px;
-    }
+  .character-info {
+    padding: 12px;
+  }
 
-    .character-name {
-        font-size: 1.1rem;
-    }
+  .character-name {
+    font-size: 1.1rem;
+  }
 
-    .character-desc {
-        font-size: 0.85rem;
-    }
+  .character-desc {
+    font-size: 0.85rem;
+  }
 
-    .character-actions {
-        padding: 12px;
-        gap: 8px;
-    }
+  .character-actions {
+    padding: 12px;
+    gap: 8px;
+  }
 
-    .btn-edit,
-    .btn-delete {
-        padding: 10px 12px;
-        font-size: 0.9rem;
-    }
+  .btn-edit,
+  .btn-delete {
+    padding: 10px 12px;
+    font-size: 0.9rem;
+  }
 
-    /* 指南网格 */
-    .guide-grid {
-        grid-template-columns: 1fr;
-        gap: 15px;
-    }
+  /* 指南网格 */
+  .guide-grid {
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
 
-    .guide-card {
-        padding: 15px;
-    }
+  .guide-card {
+    padding: 15px;
+  }
 
-    .guide-card h3 {
-        font-size: 1rem;
-    }
+  .guide-card h3 {
+    font-size: 1rem;
+  }
 
-    /* 聊天界面优化 */
-    .chat-header {
-        padding: 12px 15px;
-    }
+  /* 聊天界面优化 */
+  .chat-header {
+    padding: 12px 15px;
+  }
 
-    .chat-header h2 {
-        font-size: 0.95rem;
-    }
+  .chat-header h2 {
+    font-size: 0.95rem;
+  }
 
-    .chat-main {
-        padding: 15px 12px;
-    }
+  .chat-main {
+    padding: 15px 12px;
+  }
 
-    .message {
-        gap: 8px;
-        margin-bottom: 15px;
-    }
+  .message {
+    gap: 8px;
+    margin-bottom: 15px;
+  }
 
-    .message-avatar {
-        width: 36px;
-        height: 36px;
-        font-size: 0.9rem;
-    }
+  .message-avatar {
+    width: 36px;
+    height: 36px;
+    font-size: 0.9rem;
+  }
 
-    .message-bubble {
-        max-width: 90%;
-        padding: 10px 14px;
-        font-size: 0.95rem;
-        border-radius: 16px;
-    }
+  .message-bubble {
+    max-width: 90%;
+    padding: 10px 14px;
+    font-size: 0.95rem;
+    border-radius: 16px;
+  }
 
-    /* 输入区域优化 */
-    .chat-footer {
-        padding: 12px 15px;
-    }
+  /* 输入区域优化 */
+  .chat-footer {
+    padding: 12px 15px;
+  }
 
-    .input-wrapper {
-        gap: 8px;
-    }
+  .input-wrapper {
+    gap: 8px;
+  }
 
-    #messageInput {
-        padding: 10px 14px;
-        font-size: 16px; /* 防止iOS自动缩放 */
-        border-radius: 18px;
-    }
+  #messageInput {
+    padding: 10px 14px;
+    font-size: 16px; /* 防止iOS自动缩放 */
+    border-radius: 18px;
+  }
 
-    .btn-send {
-        padding: 10px 20px;
-        border-radius: 18px;
-        font-size: 0.95rem;
-    }
+  .btn-send {
+    padding: 10px 20px;
+    border-radius: 18px;
+    font-size: 0.95rem;
+  }
 
-    /* 模态窗口优化 */
-    .modal-content {
-        width: 96%;
-        max-height: 96vh;
-        border-radius: 8px;
-    }
+  /* 模态窗口优化 */
+  .modal-content {
+    width: 96%;
+    max-height: 96vh;
+    border-radius: 8px;
+  }
 
-    .modal-header {
-        padding: 15px;
-    }
+  .modal-header {
+    padding: 15px;
+  }
 
-    .modal-header h3 {
-        font-size: 1.1rem;
-    }
+  .modal-header h3 {
+    font-size: 1.1rem;
+  }
 
-    .modal-body {
-        padding: 15px;
-    }
+  .modal-body {
+    padding: 15px;
+  }
 
-    .config-section h4 {
-        font-size: 1rem;
-        margin: 20px 0 12px 0;
-    }
+  .config-section h4 {
+    font-size: 1rem;
+    margin: 20px 0 12px 0;
+  }
 
-    /* 配置输入框 - 防止iOS缩放 */
-    .config-input,
-    .config-select,
-    .config-textarea {
-        font-size: 16px;
-        padding: 12px;
-    }
+  /* 配置输入框 - 防止iOS缩放 */
+  .config-input,
+  .config-textarea {
+    font-size: 16px;
+    padding: 12px;
+  }
 
-    .modal-footer {
-        padding: 15px;
-        flex-direction: column;
-    }
+  .modal-footer {
+    padding: 15px;
+    flex-direction: column;
+  }
 
-    .modal-footer .btn {
-        width: 100%;
-    }
+  .modal-footer .btn {
+    width: 100%;
+  }
 
-    /* 空状态 */
-    .empty-state {
-        padding: 40px 15px;
-    }
+  /* 空状态 */
+  .empty-state {
+    padding: 40px 15px;
+  }
 
-    .empty-icon {
-        font-size: 48px;
-    }
+  .empty-icon {
+    font-size: 48px;
+  }
 
-    .empty-state h3 {
-        font-size: 1.1rem;
-    }
+  .empty-state h3 {
+    font-size: 1.1rem;
+  }
 
-    /* 指南区域 */
-    .guide-section {
-        margin-top: 40px;
-        padding: 30px 0;
-    }
+  /* 指南区域 */
+  .guide-section {
+    margin-top: 40px;
+    padding: 30px 0;
+  }
 }
 
 /* ========== 工具类 ========== */
 .btn {
-    padding: 10px 20px;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    font-size: 1rem;
-    transition: all 0.3s;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: all 0.3s;
 }
 
 .btn-primary {
-    background: var(--primary-color);
-    color: white;
+  background: var(--primary-color);
+  color: white;
 }
 
 .btn-primary:hover {
-    background: var(--accent-color);
-    transform: translateY(-2px);
+  background: var(--accent-color);
+  transform: translateY(-2px);
 }
 
 .ct-footer {
-    text-align: center;
-    padding: 30px;
-    margin-top: 60px;
-    opacity: 0.5;
+  text-align: center;
+  padding: 30px;
+  margin-top: 60px;
+  opacity: 0.5;
 }

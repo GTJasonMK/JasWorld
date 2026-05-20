@@ -6,14 +6,18 @@ bootstrapCore();
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const SCALE_TYPES = [
-    { label: '大调', offsets: [0, 2, 4, 5, 7, 9, 11], degrees: ['1', '2', '3', '4', '5', '6', '7'] },
-    { label: '小调', offsets: [0, 2, 3, 5, 7, 8, 10], degrees: ['1', '2', 'b3', '4', '5', 'b6', 'b7'] },
+  { label: '大调', offsets: [0, 2, 4, 5, 7, 9, 11], degrees: ['1', '2', '3', '4', '5', '6', '7'] },
+  {
+    label: '小调',
+    offsets: [0, 2, 3, 5, 7, 8, 10],
+    degrees: ['1', '2', 'b3', '4', '5', 'b6', 'b7'],
+  },
 ];
 
 const MIN_FREQ = 27.5;
 const MAX_FREQ = 4200;
 const BUFFER_SIZE = 4096;
-const MIN_PITCH_CONFIDENCE = 0.7;
+const MIN_PITCH_CONFIDENCE = 0.64;
 const PITCH_SUMMARY_MIN_FRAMES = 3;
 const YIN_THRESHOLD = 0.16;
 const YIN_FALLBACK_THRESHOLD = 0.24;
@@ -30,27 +34,33 @@ const OFFLINE_BOUNDARY_PEAK_WINDOW_MS = 170;
 const OFFLINE_BOUNDARY_GUARD_MS = 28;
 const OFFLINE_BOUNDARY_DROP_RATIO = 0.55;
 const OFFLINE_SPECTRUM_MAX_FREQ = 5000;
+const TRACKING_HOP_MS = 24;
+const TRACKING_MIN_NOTE_MS = 90;
+const TRACKING_MAX_FRAME_GAP_MS = 86;
+const TRACKING_CONFIDENCE_FLOOR = 0.56;
 const DENOISE_FRAME_MS = 46;
 const DENOISE_NOISE_PROFILE_MS = 320;
 const NOTE_PLAY_SECONDS = 1.25;
 
 const els = {
-    hold: document.getElementById('hold-to-record'),
-    holdTitle: document.getElementById('hold-title'),
-    holdHint: document.getElementById('hold-hint'),
-    play: document.getElementById('play-sequence'),
-    playRecording: document.getElementById('play-recording'),
-    downloadRecording: document.getElementById('download-recording'),
-    clearRecording: document.getElementById('clear-recording'),
-    recordingLabel: document.getElementById('recording-label'),
-    clear: document.getElementById('clear-sequence'),
-    copy: document.getElementById('copy-sequence'),
-    removeLast: document.getElementById('remove-last'),
-    sensitivity: document.getElementById('sensitivity-slider'),
-    status: document.getElementById('detector-status'),
-    sequence: document.getElementById('note-sequence'),
-    degreeSequence: document.getElementById('degree-sequence'),
-    scaleCandidates: document.getElementById('scale-candidates'),
+  hold: document.getElementById('hold-to-record'),
+  holdTitle: document.getElementById('hold-title'),
+  holdHint: document.getElementById('hold-hint'),
+  uploadAudioButton: document.getElementById('upload-audio-button'),
+  uploadAudioFile: document.getElementById('upload-audio-file'),
+  play: document.getElementById('play-sequence'),
+  playRecording: document.getElementById('play-recording'),
+  downloadRecording: document.getElementById('download-recording'),
+  clearRecording: document.getElementById('clear-recording'),
+  recordingLabel: document.getElementById('recording-label'),
+  clear: document.getElementById('clear-sequence'),
+  copy: document.getElementById('copy-sequence'),
+  removeLast: document.getElementById('remove-last'),
+  sensitivity: document.getElementById('sensitivity-slider'),
+  status: document.getElementById('detector-status'),
+  sequence: document.getElementById('note-sequence'),
+  degreeSequence: document.getElementById('degree-sequence'),
+  scaleCandidates: document.getElementById('scale-candidates'),
 };
 
 let audioContext = null;
@@ -61,6 +71,7 @@ let micSource = null;
 let micStream = null;
 let recording = false;
 let processingRecording = false;
+let processingUpload = false;
 let pendingStart = false;
 let stopAfterStart = false;
 let capturedNotes = [];
@@ -73,6 +84,7 @@ let playbackTimers = [];
 let savedRecordingUrl = '';
 let savedRecordingBlob = null;
 let savedRecordingDuration = 0;
+let savedRecordingName = '';
 let originalAudio = null;
 let pcmChunks = [];
 let pcmSampleCount = 0;
@@ -82,2256 +94,2779 @@ const pianoBufferCache = new Map();
 const hannWindowCache = new Map();
 
 function clamp(value, min, max) {
-    return Math.min(max, Math.max(min, value));
+  return Math.min(max, Math.max(min, value));
 }
 
 function midiToNote(midi) {
-    const name = NOTE_NAMES[((midi % 12) + 12) % 12];
-    const octave = Math.floor(midi / 12) - 1;
-    return `${name}${octave}`;
+  const name = NOTE_NAMES[((midi % 12) + 12) % 12];
+  const octave = Math.floor(midi / 12) - 1;
+  return `${name}${octave}`;
 }
 
 function frequencyToMidi(frequency) {
-    return Math.round(69 + 12 * Math.log2(frequency / 440));
+  return Math.round(69 + 12 * Math.log2(frequency / 440));
 }
 
 function midiToFrequency(midi) {
-    return 440 * Math.pow(2, (midi - 69) / 12);
+  return 440 * Math.pow(2, (midi - 69) / 12);
 }
 
 function frequencyToNote(frequency) {
-    const midi = clamp(frequencyToMidi(frequency), 21, 108);
-    const expectedFrequency = midiToFrequency(midi);
-    return {
-        midi,
-        note: midiToNote(midi),
-        pitchClass: ((midi % 12) + 12) % 12,
-        frequency,
-        cents: 1200 * Math.log2(frequency / expectedFrequency),
-    };
+  const midi = clamp(frequencyToMidi(frequency), 21, 108);
+  const expectedFrequency = midiToFrequency(midi);
+  return {
+    midi,
+    note: midiToNote(midi),
+    pitchClass: ((midi % 12) + 12) % 12,
+    frequency,
+    cents: 1200 * Math.log2(frequency / expectedFrequency),
+  };
 }
 
 function parabolicMinimum(values, index) {
-    const left = values[index - 1];
-    const center = values[index];
-    const right = values[index + 1];
-    const divisor = left - 2 * center + right;
-    if (!Number.isFinite(divisor) || Math.abs(divisor) < 0.000001) return index;
-    return index + clamp((left - right) / (2 * divisor), -0.5, 0.5);
+  const left = values[index - 1];
+  const center = values[index];
+  const right = values[index + 1];
+  const divisor = left - 2 * center + right;
+  if (!Number.isFinite(divisor) || Math.abs(divisor) < 0.000001) return index;
+  return index + clamp((left - right) / (2 * divisor), -0.5, 0.5);
 }
 
 function parabolicMaximum(values, index) {
-    const left = values[index - 1];
-    const center = values[index];
-    const right = values[index + 1];
-    const divisor = left - 2 * center + right;
-    if (!Number.isFinite(divisor) || Math.abs(divisor) < 0.000001) return index;
-    return index + clamp((left - right) / (2 * divisor), -0.5, 0.5);
+  const left = values[index - 1];
+  const center = values[index];
+  const right = values[index + 1];
+  const divisor = left - 2 * center + right;
+  if (!Number.isFinite(divisor) || Math.abs(divisor) < 0.000001) return index;
+  return index + clamp((left - right) / (2 * divisor), -0.5, 0.5);
 }
 
 function getPitchBufferStats(buffer) {
-    let sum = 0;
-    let sumSquares = 0;
-    for (let i = 0; i < buffer.length; i += 1) {
-        const sample = buffer[i];
-        sum += sample;
-        sumSquares += sample * sample;
-    }
+  let sum = 0;
+  let sumSquares = 0;
+  for (let i = 0; i < buffer.length; i += 1) {
+    const sample = buffer[i];
+    sum += sample;
+    sumSquares += sample * sample;
+  }
 
-    const rms = Math.sqrt(sumSquares / buffer.length);
-    const mean = sum / buffer.length;
-    return { mean, rms };
+  const rms = Math.sqrt(sumSquares / buffer.length);
+  const mean = sum / buffer.length;
+  return { mean, rms };
 }
 
 function detectYinPitch(buffer, sampleRate, threshold, stats = getPitchBufferStats(buffer)) {
-    if (stats.rms < threshold) {
-        return { frequency: null, confidence: 0, rms: stats.rms, reason: 'quiet', method: 'yin' };
+  if (stats.rms < threshold) {
+    return { frequency: null, confidence: 0, rms: stats.rms, reason: 'quiet', method: 'yin' };
+  }
+
+  const mean = stats.mean;
+  const minLag = Math.floor(sampleRate / MAX_FREQ);
+  const maxLag = Math.min(Math.floor(sampleRate / MIN_FREQ), buffer.length - 1);
+  const yin = new Float32Array(maxLag + 1);
+
+  for (let tau = 1; tau <= maxLag; tau += 1) {
+    let difference = 0;
+    const size = buffer.length - tau;
+
+    for (let i = 0; i < size; i += 1) {
+      const delta = buffer[i] - mean - (buffer[i + tau] - mean);
+      difference += delta * delta;
     }
 
-    const mean = stats.mean;
-    const minLag = Math.floor(sampleRate / MAX_FREQ);
-    const maxLag = Math.min(Math.floor(sampleRate / MIN_FREQ), buffer.length - 1);
-    const yin = new Float32Array(maxLag + 1);
+    yin[tau] = difference;
+  }
 
-    for (let tau = 1; tau <= maxLag; tau += 1) {
-        let difference = 0;
-        const size = buffer.length - tau;
+  let cumulativeDifference = 0;
+  let bestLag = -1;
+  let bestValue = Number.POSITIVE_INFINITY;
 
-        for (let i = 0; i < size; i += 1) {
-            const delta = (buffer[i] - mean) - (buffer[i + tau] - mean);
-            difference += delta * delta;
-        }
+  yin[0] = 1;
+  for (let tau = 1; tau <= maxLag; tau += 1) {
+    cumulativeDifference += yin[tau];
+    yin[tau] = cumulativeDifference > 0 ? (yin[tau] * tau) / cumulativeDifference : 1;
 
-        yin[tau] = difference;
+    if (tau >= minLag && yin[tau] < bestValue) {
+      bestValue = yin[tau];
+      bestLag = tau;
+    }
+  }
+
+  let selectedLag = -1;
+  for (let tau = minLag; tau <= maxLag; tau += 1) {
+    if (yin[tau] >= YIN_THRESHOLD) continue;
+
+    while (tau + 1 <= maxLag && yin[tau + 1] < yin[tau]) {
+      tau += 1;
     }
 
-    let cumulativeDifference = 0;
-    let bestLag = -1;
-    let bestValue = Number.POSITIVE_INFINITY;
+    selectedLag = tau;
+    break;
+  }
 
-    yin[0] = 1;
-    for (let tau = 1; tau <= maxLag; tau += 1) {
-        cumulativeDifference += yin[tau];
-        yin[tau] = cumulativeDifference > 0 ? (yin[tau] * tau) / cumulativeDifference : 1;
+  if (selectedLag < 0 && bestValue <= YIN_FALLBACK_THRESHOLD) {
+    selectedLag = bestLag;
+  }
 
-        if (tau >= minLag && yin[tau] < bestValue) {
-            bestValue = yin[tau];
-            bestLag = tau;
-        }
-    }
+  const confidence = selectedLag > 0 ? 1 - yin[selectedLag] : Math.max(0, 1 - bestValue);
+  if (selectedLag < 0 || confidence < MIN_PITCH_CONFIDENCE) {
+    return { frequency: null, confidence, rms: stats.rms, reason: 'unclear', method: 'yin' };
+  }
 
-    let selectedLag = -1;
-    for (let tau = minLag; tau <= maxLag; tau += 1) {
-        if (yin[tau] >= YIN_THRESHOLD) continue;
+  const refinedLag =
+    selectedLag > 1 && selectedLag < maxLag ? parabolicMinimum(yin, selectedLag) : selectedLag;
 
-        while (tau + 1 <= maxLag && yin[tau + 1] < yin[tau]) {
-            tau += 1;
-        }
-
-        selectedLag = tau;
-        break;
-    }
-
-    if (selectedLag < 0 && bestValue <= YIN_FALLBACK_THRESHOLD) {
-        selectedLag = bestLag;
-    }
-
-    const confidence = selectedLag > 0 ? 1 - yin[selectedLag] : Math.max(0, 1 - bestValue);
-    if (selectedLag < 0 || confidence < MIN_PITCH_CONFIDENCE) {
-        return { frequency: null, confidence, rms: stats.rms, reason: 'unclear', method: 'yin' };
-    }
-
-    const refinedLag = selectedLag > 1 && selectedLag < maxLag
-        ? parabolicMinimum(yin, selectedLag)
-        : selectedLag;
-
-    return {
-        frequency: sampleRate / refinedLag,
-        confidence,
-        rms: stats.rms,
-        reason: 'pitched',
-        method: 'yin',
-    };
+  return {
+    frequency: sampleRate / refinedLag,
+    confidence,
+    rms: stats.rms,
+    reason: 'pitched',
+    method: 'yin',
+  };
 }
 
 function detectMpmPitch(buffer, sampleRate, threshold, stats = getPitchBufferStats(buffer)) {
-    if (stats.rms < threshold) {
-        return { frequency: null, confidence: 0, rms: stats.rms, reason: 'quiet', method: 'mpm' };
+  if (stats.rms < threshold) {
+    return { frequency: null, confidence: 0, rms: stats.rms, reason: 'quiet', method: 'mpm' };
+  }
+
+  const minLag = Math.floor(sampleRate / MAX_FREQ);
+  const maxLag = Math.min(Math.floor(sampleRate / MIN_FREQ), buffer.length - 2);
+  const centered = new Float32Array(buffer.length);
+  const squarePrefix = new Float64Array(buffer.length + 1);
+
+  for (let index = 0; index < buffer.length; index += 1) {
+    const sample = buffer[index] - stats.mean;
+    centered[index] = sample;
+    squarePrefix[index + 1] = squarePrefix[index] + sample * sample;
+  }
+
+  const nsdf = new Float32Array(maxLag + 1);
+  let highestPeak = 0;
+  const peaks = [];
+
+  for (let tau = minLag; tau <= maxLag; tau += 1) {
+    const size = buffer.length - tau;
+    let correlation = 0;
+
+    for (let index = 0; index < size; index += 1) {
+      correlation += centered[index] * centered[index + tau];
     }
 
-    const minLag = Math.floor(sampleRate / MAX_FREQ);
-    const maxLag = Math.min(Math.floor(sampleRate / MIN_FREQ), buffer.length - 2);
-    const centered = new Float32Array(buffer.length);
-    const squarePrefix = new Float64Array(buffer.length + 1);
+    const energy = squarePrefix[size] + squarePrefix[buffer.length] - squarePrefix[tau];
+    nsdf[tau] = energy > 0 ? (2 * correlation) / energy : 0;
+  }
 
-    for (let index = 0; index < buffer.length; index += 1) {
-        const sample = buffer[index] - stats.mean;
-        centered[index] = sample;
-        squarePrefix[index + 1] = squarePrefix[index] + sample * sample;
-    }
+  for (let tau = minLag + 1; tau < maxLag; tau += 1) {
+    const value = nsdf[tau];
+    if (value <= 0 || value < nsdf[tau - 1] || value < nsdf[tau + 1]) continue;
+    highestPeak = Math.max(highestPeak, value);
+    peaks.push({ tau, value });
+  }
 
-    const nsdf = new Float32Array(maxLag + 1);
-    let highestPeak = 0;
-    const peaks = [];
-
-    for (let tau = minLag; tau <= maxLag; tau += 1) {
-        const size = buffer.length - tau;
-        let correlation = 0;
-
-        for (let index = 0; index < size; index += 1) {
-            correlation += centered[index] * centered[index + tau];
-        }
-
-        const energy = squarePrefix[size] + squarePrefix[buffer.length] - squarePrefix[tau];
-        nsdf[tau] = energy > 0 ? (2 * correlation) / energy : 0;
-    }
-
-    for (let tau = minLag + 1; tau < maxLag; tau += 1) {
-        const value = nsdf[tau];
-        if (value <= 0 || value < nsdf[tau - 1] || value < nsdf[tau + 1]) continue;
-        highestPeak = Math.max(highestPeak, value);
-        peaks.push({ tau, value });
-    }
-
-    if (highestPeak < MPM_CLARITY_THRESHOLD || peaks.length === 0) {
-        return {
-            frequency: null,
-            confidence: Math.max(0, highestPeak),
-            rms: stats.rms,
-            reason: 'unclear',
-            method: 'mpm',
-        };
-    }
-
-    const selected = peaks.find(peak => peak.value >= highestPeak * MPM_CANDIDATE_RATIO) || peaks[0];
-    const refinedLag = selected.tau > minLag && selected.tau < maxLag
-        ? parabolicMaximum(nsdf, selected.tau)
-        : selected.tau;
-
+  if (highestPeak < MPM_CLARITY_THRESHOLD || peaks.length === 0) {
     return {
-        frequency: sampleRate / refinedLag,
-        confidence: clamp(selected.value, 0, 1),
-        rms: stats.rms,
-        reason: 'pitched',
-        method: 'mpm',
+      frequency: null,
+      confidence: Math.max(0, highestPeak),
+      rms: stats.rms,
+      reason: 'unclear',
+      method: 'mpm',
     };
+  }
+
+  const selected =
+    peaks.find((peak) => peak.value >= highestPeak * MPM_CANDIDATE_RATIO) || peaks[0];
+  const refinedLag =
+    selected.tau > minLag && selected.tau < maxLag
+      ? parabolicMaximum(nsdf, selected.tau)
+      : selected.tau;
+
+  return {
+    frequency: sampleRate / refinedLag,
+    confidence: clamp(selected.value, 0, 1),
+    rms: stats.rms,
+    reason: 'pitched',
+    method: 'mpm',
+  };
 }
 
 function choosePitchResult(yin, mpm) {
-    if (!mpm.frequency) return yin;
-    if (!yin.frequency) return mpm.confidence >= MIN_PITCH_CONFIDENCE ? mpm : yin;
+  if (!mpm.frequency) return yin;
+  if (!yin.frequency) return mpm.confidence >= MIN_PITCH_CONFIDENCE ? mpm : yin;
 
-    const yinMidi = frequencyToMidi(yin.frequency);
-    const mpmMidi = frequencyToMidi(mpm.frequency);
-    const distance = Math.abs(yinMidi - mpmMidi);
+  const yinMidi = frequencyToMidi(yin.frequency);
+  const mpmMidi = frequencyToMidi(mpm.frequency);
+  const distance = Math.abs(yinMidi - mpmMidi);
 
-    if (mpmMidi < yinMidi - 12 && yin.confidence >= 0.52) {
-        return yin;
-    }
-
-    if (distance === 0) {
-        return {
-            ...yin,
-            frequency: (yin.frequency * yin.confidence + mpm.frequency * mpm.confidence)
-                / Math.max(0.001, yin.confidence + mpm.confidence),
-            confidence: Math.max(yin.confidence, mpm.confidence),
-            method: 'yin+mpm',
-        };
-    }
-
-    if (mpm.confidence >= MPM_FALLBACK_CONFIDENCE && yin.confidence < 0.9) {
-        return mpm;
-    }
-
+  if (mpmMidi < yinMidi - 12 && yin.confidence >= 0.52) {
     return yin;
+  }
+
+  if (distance === 0) {
+    return {
+      ...yin,
+      frequency:
+        (yin.frequency * yin.confidence + mpm.frequency * mpm.confidence) /
+        Math.max(0.001, yin.confidence + mpm.confidence),
+      confidence: Math.max(yin.confidence, mpm.confidence),
+      method: 'yin+mpm',
+    };
+  }
+
+  if (mpm.confidence >= MPM_FALLBACK_CONFIDENCE && yin.confidence < 0.9) {
+    return mpm;
+  }
+
+  return yin;
 }
 
 function detectPitch(buffer, sampleRate, threshold) {
-    const stats = getPitchBufferStats(buffer);
-    const yin = detectYinPitch(buffer, sampleRate, threshold, stats);
-    if (yin.frequency && yin.confidence >= 0.92) return yin;
+  const stats = getPitchBufferStats(buffer);
+  const yin = detectYinPitch(buffer, sampleRate, threshold, stats);
+  if (yin.frequency && yin.confidence >= 0.92) return yin;
 
-    const mpm = detectMpmPitch(buffer, sampleRate, threshold, stats);
-    return choosePitchResult(yin, mpm);
+  const mpm = detectMpmPitch(buffer, sampleRate, threshold, stats);
+  return choosePitchResult(yin, mpm);
 }
 
 function setStatus(text) {
-    els.status.textContent = text;
+  els.status.textContent = text;
 }
 
 function setHoldState(state) {
-    els.hold.classList.toggle('recording', state === 'recording');
-    els.hold.classList.toggle('processing', state === 'processing');
+  els.hold.classList.toggle('recording', state === 'recording');
+  els.hold.classList.toggle('processing', state === 'processing');
 
-    if (state === 'recording') {
-        els.holdTitle.textContent = '正在聆听';
-        els.holdHint.textContent = '松开开始识别';
-        return;
-    }
+  if (state === 'recording') {
+    els.holdTitle.textContent = '正在聆听';
+    els.holdHint.textContent = '松开开始识别';
+    return;
+  }
 
-    if (state === 'processing') {
-        els.holdTitle.textContent = '正在识别';
-        els.holdHint.textContent = '整理本次声音';
-        return;
-    }
+  if (state === 'processing') {
+    els.holdTitle.textContent = '正在识别';
+    els.holdHint.textContent = '整理本次声音';
+    return;
+  }
 
-    els.holdTitle.textContent = '按住聆听';
-    els.holdHint.textContent = '松开后识别音符与音阶';
+  els.holdTitle.textContent = '按住聆听';
+  els.holdHint.textContent = '松开后识别音符与音阶';
 }
 
 function getRmsThreshold() {
-    const sensitivity = clamp(Number(els.sensitivity.value || 9), 1, 10);
-    return 0.016 - ((sensitivity - 1) / 9) * 0.014;
+  const sensitivity = clamp(Number(els.sensitivity.value || 9), 1, 10);
+  return 0.016 - ((sensitivity - 1) / 9) * 0.014;
 }
 
 function getInputGainValue() {
-    const sensitivity = clamp(Number(els.sensitivity.value || 9), 1, 10);
-    return 1 + Math.pow((sensitivity - 1) / 9, 1.4) * 7;
+  const sensitivity = clamp(Number(els.sensitivity.value || 9), 1, 10);
+  return 1 + Math.pow((sensitivity - 1) / 9, 1.35) * 2.2;
 }
 
 function syncInputGain() {
-    if (!inputGain) return;
-    inputGain.gain.setTargetAtTime(getInputGainValue(), audioContext?.currentTime || 0, 0.015);
+  if (!inputGain) return;
+  inputGain.gain.setTargetAtTime(getInputGainValue(), audioContext?.currentTime || 0, 0.015);
 }
 
 function getAudioVolume() {
-    return clamp(Number(settingsManager.get('audio', 'volume', 0.8)), 0, 1);
+  return clamp(Number(settingsManager.get('audio', 'volume', 0.8)), 0, 1);
 }
 
 function getSequenceDelayMs() {
-    return clamp(Number(settingsManager.get('audio', 'noteDelay', 400)), 150, 1200);
+  return clamp(Number(settingsManager.get('audio', 'noteDelay', 400)), 150, 1200);
 }
 
 function getAppRootPath() {
-    const currentPath = window.location.pathname;
-    if (currentPath.includes('/pages/')) {
-        return currentPath.slice(0, currentPath.indexOf('/pages/') + 1);
-    }
+  const currentPath = window.location.pathname;
+  if (currentPath.includes('/pages/')) {
+    return currentPath.slice(0, currentPath.indexOf('/pages/') + 1);
+  }
 
-    return currentPath.replace(/[^/]*$/, '');
+  return currentPath.replace(/[^/]*$/, '');
 }
 
 function noteToSampleName(note) {
-    return note.replace('#', 's');
+  return note.replace('#', 's');
 }
 
 function getPianoSampleUrl(note) {
-    return `${window.location.origin}${getAppRootPath()}audio/piano/${noteToSampleName(note)}.mp3`;
+  return `${window.location.origin}${getAppRootPath()}audio/piano/${noteToSampleName(note)}.mp3`;
 }
 
 async function getPlaybackContext() {
-    if (!playbackContext || playbackContext.state === 'closed') {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        playbackContext = new AudioCtx();
-    }
+  if (!playbackContext || playbackContext.state === 'closed') {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    playbackContext = new AudioCtx();
+  }
 
-    if (playbackContext.state === 'suspended') {
-        await playbackContext.resume();
-    }
+  if (playbackContext.state === 'suspended') {
+    await playbackContext.resume();
+  }
 
-    return playbackContext;
+  return playbackContext;
 }
 
 async function loadPianoBuffer(note) {
-    if (pianoBufferCache.has(note)) return pianoBufferCache.get(note);
+  if (pianoBufferCache.has(note)) return pianoBufferCache.get(note);
 
-    const context = await getPlaybackContext();
-    const response = await fetch(getPianoSampleUrl(note));
-    if (!response.ok) {
-        throw new Error(`钢琴采样加载失败: ${note} (${response.status})`);
-    }
+  const context = await getPlaybackContext();
+  const response = await fetch(getPianoSampleUrl(note));
+  if (!response.ok) {
+    throw new Error(`钢琴采样加载失败: ${note} (${response.status})`);
+  }
 
-    const buffer = await context.decodeAudioData(await response.arrayBuffer());
-    pianoBufferCache.set(note, buffer);
-    return buffer;
+  const buffer = await context.decodeAudioData(await response.arrayBuffer());
+  pianoBufferCache.set(note, buffer);
+  return buffer;
 }
 
 function setPlaybackMode(mode) {
-    playbackMode = mode;
-    els.play.classList.toggle('playing', mode === 'playing');
+  playbackMode = mode;
+  els.play.classList.toggle('playing', mode === 'playing');
 
-    if (mode === 'loading') {
-        els.play.textContent = '加载';
-        els.play.disabled = true;
-        return;
-    }
+  if (mode === 'loading') {
+    els.play.textContent = '加载';
+    els.play.disabled = true;
+    return;
+  }
 
-    if (mode === 'playing') {
-        els.play.textContent = '停止';
-        els.play.disabled = false;
-        return;
-    }
+  if (mode === 'playing') {
+    els.play.textContent = '停止';
+    els.play.disabled = false;
+    return;
+  }
 
-    els.play.textContent = '播放';
-    els.play.disabled = capturedNotes.length === 0;
+  els.play.textContent = '播放';
+  els.play.disabled = capturedNotes.length === 0;
 }
 
 function formatDuration(seconds) {
-    if (!Number.isFinite(seconds) || seconds <= 0) return '0.0s';
-    return `${seconds.toFixed(1)}s`;
+  if (!Number.isFinite(seconds) || seconds <= 0) return '0.0s';
+  return `${seconds.toFixed(1)}s`;
 }
 
 function getRecordingExtension(blob) {
-    if (blob.type.includes('wav')) return 'wav';
-    return 'audio';
+  if (blob.type.includes('wav')) return 'wav';
+  if (blob.type.includes('mpeg')) return 'mp3';
+  if (blob.type.includes('ogg')) return 'ogg';
+  if (blob.type.includes('mp4')) return 'm4a';
+  if (blob.type.includes('aac')) return 'aac';
+  if (blob.type.includes('flac')) return 'flac';
+  return 'audio';
+}
+
+function sanitizeDownloadName(name) {
+  const cleaned = String(name || '')
+    .replace(/\.[^.]+$/, '')
+    .replace(/[^\w.-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  return cleaned || 'sound-to-scale-analysis';
 }
 
 function writeAscii(view, offset, text) {
-    for (let index = 0; index < text.length; index += 1) {
-        view.setUint8(offset + index, text.charCodeAt(index));
-    }
+  for (let index = 0; index < text.length; index += 1) {
+    view.setUint8(offset + index, text.charCodeAt(index));
+  }
 }
 
 function createPcmWavBlob(samples, sampleRate) {
-    const bytesPerSample = 2;
-    const dataSize = samples.length * bytesPerSample;
-    const buffer = new ArrayBuffer(44 + dataSize);
-    const view = new DataView(buffer);
+  const bytesPerSample = 2;
+  const dataSize = samples.length * bytesPerSample;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
 
-    writeAscii(view, 0, 'RIFF');
-    view.setUint32(4, 36 + dataSize, true);
-    writeAscii(view, 8, 'WAVE');
-    writeAscii(view, 12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, 1, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * bytesPerSample, true);
-    view.setUint16(32, bytesPerSample, true);
-    view.setUint16(34, bytesPerSample * 8, true);
-    writeAscii(view, 36, 'data');
-    view.setUint32(40, dataSize, true);
+  writeAscii(view, 0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeAscii(view, 8, 'WAVE');
+  writeAscii(view, 12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * bytesPerSample, true);
+  view.setUint16(32, bytesPerSample, true);
+  view.setUint16(34, bytesPerSample * 8, true);
+  writeAscii(view, 36, 'data');
+  view.setUint32(40, dataSize, true);
 
-    let offset = 44;
-    for (let index = 0; index < samples.length; index += 1) {
-        const sample = clamp(Number.isFinite(samples[index]) ? samples[index] : 0, -1, 1);
-        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
-        offset += bytesPerSample;
-    }
+  let offset = 44;
+  for (let index = 0; index < samples.length; index += 1) {
+    const sample = clamp(Number.isFinite(samples[index]) ? samples[index] : 0, -1, 1);
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    offset += bytesPerSample;
+  }
 
-    return new Blob([buffer], { type: 'audio/wav' });
+  return new Blob([buffer], { type: 'audio/wav' });
 }
 
 function setRecordingReviewState(state) {
-    const hasRecording = !!savedRecordingBlob;
-    const isPlaying = state === 'playing';
+  const hasRecording = !!savedRecordingBlob;
+  const isPlaying = state === 'playing';
 
-    els.playRecording.textContent = isPlaying ? '停止分析音' : '分析音频';
-    els.playRecording.classList.toggle('playing', isPlaying);
-    els.playRecording.disabled = !hasRecording;
-    els.clearRecording.disabled = !hasRecording;
-    els.recordingLabel.textContent = hasRecording
-        ? `识别音频已保存 ${formatDuration(savedRecordingDuration)}`
-        : '识别音频未保存';
+  els.playRecording.textContent = isPlaying ? '停止分析音' : '分析音频';
+  els.playRecording.classList.toggle('playing', isPlaying);
+  els.playRecording.disabled = !hasRecording;
+  els.clearRecording.disabled = !hasRecording;
+  els.recordingLabel.textContent = hasRecording
+    ? `${savedRecordingName || '识别音频'} ${formatDuration(savedRecordingDuration)}`
+    : '识别音频未保存';
 
-    if (hasRecording) {
-        const extension = getRecordingExtension(savedRecordingBlob);
-        els.downloadRecording.href = savedRecordingUrl;
-        els.downloadRecording.download = `sound-to-scale-analysis-${Date.now()}.${extension}`;
-        els.downloadRecording.classList.remove('disabled');
-        els.downloadRecording.setAttribute('aria-disabled', 'false');
-    } else {
-        els.downloadRecording.removeAttribute('href');
-        els.downloadRecording.classList.add('disabled');
-        els.downloadRecording.setAttribute('aria-disabled', 'true');
-    }
+  if (hasRecording) {
+    const extension = getRecordingExtension(savedRecordingBlob);
+    els.downloadRecording.href = savedRecordingUrl;
+    els.downloadRecording.download = `${sanitizeDownloadName(savedRecordingName)}-${Date.now()}.${extension}`;
+    els.downloadRecording.classList.remove('disabled');
+    els.downloadRecording.setAttribute('aria-disabled', 'false');
+  } else {
+    els.downloadRecording.removeAttribute('href');
+    els.downloadRecording.classList.add('disabled');
+    els.downloadRecording.setAttribute('aria-disabled', 'true');
+  }
 }
 
 function revokeSavedRecording() {
-    if (savedRecordingUrl) URL.revokeObjectURL(savedRecordingUrl);
-    savedRecordingUrl = '';
-    savedRecordingBlob = null;
-    savedRecordingDuration = 0;
+  if (savedRecordingUrl) URL.revokeObjectURL(savedRecordingUrl);
+  savedRecordingUrl = '';
+  savedRecordingBlob = null;
+  savedRecordingDuration = 0;
+  savedRecordingName = '';
 }
 
 function stopOriginalPlayback() {
-    if (originalAudio) {
-        originalAudio.pause();
-        originalAudio.currentTime = 0;
-        originalAudio = null;
-    }
+  if (originalAudio) {
+    originalAudio.pause();
+    originalAudio.currentTime = 0;
+    originalAudio = null;
+  }
 
-    setRecordingReviewState('idle');
+  setRecordingReviewState('idle');
 }
 
 function clearSavedRecording() {
-    stopOriginalPlayback();
-    revokeSavedRecording();
-    setRecordingReviewState('idle');
-    setStatus('识别音频已清除');
+  stopOriginalPlayback();
+  revokeSavedRecording();
+  setRecordingReviewState('idle');
+  setStatus('识别音频已清除');
 }
 
-function saveRecordingBlob(blob, duration) {
-    stopOriginalPlayback();
-    revokeSavedRecording();
-    savedRecordingBlob = blob;
-    savedRecordingDuration = duration;
-    savedRecordingUrl = URL.createObjectURL(blob);
-    setRecordingReviewState('idle');
+function saveRecordingBlob(blob, duration, name = '识别音频') {
+  stopOriginalPlayback();
+  revokeSavedRecording();
+  savedRecordingBlob = blob;
+  savedRecordingDuration = duration;
+  savedRecordingName = name;
+  savedRecordingUrl = URL.createObjectURL(blob);
+  setRecordingReviewState('idle');
 }
 
 function savePcmRecording(pcmRecording) {
-    if (!pcmRecording?.samples?.length || !pcmRecording.sampleRate) return;
+  if (!pcmRecording?.samples?.length || !pcmRecording.sampleRate) return;
 
-    const blob = createPcmWavBlob(pcmRecording.samples, pcmRecording.sampleRate);
-    saveRecordingBlob(blob, pcmRecording.samples.length / pcmRecording.sampleRate);
+  const blob = createPcmWavBlob(pcmRecording.samples, pcmRecording.sampleRate);
+  saveRecordingBlob(blob, pcmRecording.samples.length / pcmRecording.sampleRate, '录音');
+}
+
+function setUploadProcessing(active) {
+  processingUpload = active;
+  els.uploadAudioButton.disabled = active || recording || pendingStart || processingRecording;
+  els.uploadAudioButton.textContent = active ? '分析中' : '上传';
+}
+
+function syncUploadAvailability() {
+  if (processingUpload) return;
+  els.uploadAudioButton.disabled = recording || pendingStart || processingRecording;
+}
+
+async function decodeAudioBlob(blob) {
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) throw new Error('AudioContext unsupported');
+
+  const context = new AudioCtx();
+  try {
+    const decoded = await context.decodeAudioData(await blob.arrayBuffer());
+    const samples = new Float32Array(decoded.length);
+
+    for (let channel = 0; channel < decoded.numberOfChannels; channel += 1) {
+      const data = decoded.getChannelData(channel);
+      for (let index = 0; index < samples.length; index += 1) {
+        samples[index] += data[index] / decoded.numberOfChannels;
+      }
+    }
+
+    return {
+      samples,
+      sampleRate: decoded.sampleRate,
+      duration: decoded.duration,
+    };
+  } finally {
+    context.close().catch(() => {});
+  }
 }
 
 function playSavedRecording() {
-    if (!savedRecordingUrl) {
-        setStatus('没有保存的识别音频');
-        return;
-    }
+  if (!savedRecordingUrl) {
+    setStatus('没有保存的识别音频');
+    return;
+  }
 
-    if (originalAudio) {
-        stopOriginalPlayback();
-        setStatus('已停止识别音频');
-        return;
-    }
+  if (originalAudio) {
+    stopOriginalPlayback();
+    setStatus('已停止识别音频');
+    return;
+  }
 
-    stopPlayback();
-    originalAudio = new Audio(savedRecordingUrl);
-    originalAudio.volume = getAudioVolume();
-    originalAudio.addEventListener('ended', () => {
-        originalAudio = null;
-        setRecordingReviewState('idle');
-        setStatus('识别音频播放完成');
-    }, { once: true });
-    originalAudio.addEventListener('error', () => {
-        originalAudio = null;
-        setRecordingReviewState('idle');
-        setStatus('识别音频播放失败');
-    }, { once: true });
-    setRecordingReviewState('playing');
-    setStatus('播放识别音频');
-    originalAudio.play().catch(error => {
-        console.warn('[听音识阶] 识别音频播放失败', error);
-        originalAudio = null;
-        setRecordingReviewState('idle');
-        setStatus('识别音频播放失败');
-    });
+  stopPlayback();
+  originalAudio = new Audio(savedRecordingUrl);
+  originalAudio.volume = getAudioVolume();
+  originalAudio.addEventListener(
+    'ended',
+    () => {
+      originalAudio = null;
+      setRecordingReviewState('idle');
+      setStatus('识别音频播放完成');
+    },
+    { once: true }
+  );
+  originalAudio.addEventListener(
+    'error',
+    () => {
+      originalAudio = null;
+      setRecordingReviewState('idle');
+      setStatus('识别音频播放失败');
+    },
+    { once: true }
+  );
+  setRecordingReviewState('playing');
+  setStatus('播放识别音频');
+  originalAudio.play().catch((error) => {
+    console.warn('[听音识阶] 识别音频播放失败', error);
+    originalAudio = null;
+    setRecordingReviewState('idle');
+    setStatus('识别音频播放失败');
+  });
 }
 
 function setNotePlaybackState(index, active) {
-    const chip = els.sequence.querySelector(`.note-chip[data-index="${index}"]`);
-    if (chip) chip.classList.toggle('playing', active);
+  const chip = els.sequence.querySelector(`.note-chip[data-index="${index}"]`);
+  if (chip) chip.classList.toggle('playing', active);
 }
 
 function clearNotePlaybackStates() {
-    els.sequence.querySelectorAll('.note-chip.playing').forEach(chip => chip.classList.remove('playing'));
+  els.sequence
+    .querySelectorAll('.note-chip.playing')
+    .forEach((chip) => chip.classList.remove('playing'));
 }
 
 function stopPlayback(showStatus = false) {
-    playbackRunId += 1;
-    playbackTimers.forEach(timer => window.clearTimeout(timer));
-    playbackTimers = [];
+  playbackRunId += 1;
+  playbackTimers.forEach((timer) => window.clearTimeout(timer));
+  playbackTimers = [];
 
-    playbackSources.forEach(source => {
-        try {
-            source.stop();
-        } catch {
-            // Source may already have ended.
-        }
-    });
-    playbackSources = [];
-    clearNotePlaybackStates();
-    setPlaybackMode('idle');
+  playbackSources.forEach((source) => {
+    try {
+      source.stop();
+    } catch {
+      // Source may already have ended.
+    }
+  });
+  playbackSources = [];
+  clearNotePlaybackStates();
+  setPlaybackMode('idle');
 
-    if (showStatus) setStatus('已停止播放');
+  if (showStatus) setStatus('已停止播放');
 }
 
 function startPianoBuffer(buffer, note, index, when, runId) {
-    const source = playbackContext.createBufferSource();
-    const gain = playbackContext.createGain();
-    source.buffer = buffer;
-    gain.gain.value = getAudioVolume();
-    source.connect(gain);
-    gain.connect(playbackContext.destination);
+  const source = playbackContext.createBufferSource();
+  const gain = playbackContext.createGain();
+  source.buffer = buffer;
+  gain.gain.value = getAudioVolume();
+  source.connect(gain);
+  gain.connect(playbackContext.destination);
 
-    const highlightDelay = Math.max(0, (when - playbackContext.currentTime) * 1000);
-    const highlightTimer = window.setTimeout(() => {
-        if (runId !== playbackRunId) return;
-        setNotePlaybackState(index, true);
-        setStatus(`播放 ${note}`);
-    }, highlightDelay);
-    playbackTimers.push(highlightTimer);
+  const highlightDelay = Math.max(0, (when - playbackContext.currentTime) * 1000);
+  const highlightTimer = window.setTimeout(() => {
+    if (runId !== playbackRunId) return;
+    setNotePlaybackState(index, true);
+    setStatus(`播放 ${note}`);
+  }, highlightDelay);
+  playbackTimers.push(highlightTimer);
 
-    source.onended = () => {
-        playbackSources = playbackSources.filter(item => item !== source);
-        setNotePlaybackState(index, false);
-    };
+  source.onended = () => {
+    playbackSources = playbackSources.filter((item) => item !== source);
+    setNotePlaybackState(index, false);
+  };
 
-    source.start(when);
-    source.stop(when + Math.min(buffer.duration, NOTE_PLAY_SECONDS));
-    playbackSources.push(source);
+  source.start(when);
+  source.stop(when + Math.min(buffer.duration, NOTE_PLAY_SECONDS));
+  playbackSources.push(source);
 }
 
 async function playCapturedNote(index) {
-    const item = capturedNotes[index];
-    if (!item) return;
+  const item = capturedNotes[index];
+  if (!item) return;
 
-    stopOriginalPlayback();
-    stopPlayback();
-    const runId = playbackRunId;
-    setPlaybackMode('loading');
-    setStatus(`加载 ${item.note}`);
+  stopOriginalPlayback();
+  stopPlayback();
+  const runId = playbackRunId;
+  setPlaybackMode('loading');
+  setStatus(`加载 ${item.note}`);
 
-    try {
-        await getPlaybackContext();
-        const buffer = await loadPianoBuffer(item.note);
+  try {
+    await getPlaybackContext();
+    const buffer = await loadPianoBuffer(item.note);
+    if (runId !== playbackRunId) return;
+
+    setPlaybackMode('playing');
+    startPianoBuffer(buffer, item.note, index, playbackContext.currentTime, runId);
+    const doneTimer = window.setTimeout(
+      () => {
         if (runId !== playbackRunId) return;
-
-        setPlaybackMode('playing');
-        startPianoBuffer(buffer, item.note, index, playbackContext.currentTime, runId);
-        const doneTimer = window.setTimeout(() => {
-            if (runId !== playbackRunId) return;
-            setPlaybackMode('idle');
-            setStatus(`已播放 ${item.note}`);
-        }, NOTE_PLAY_SECONDS * 1000 + 120);
-        playbackTimers.push(doneTimer);
-    } catch (error) {
-        console.error('[听音识阶] 播放识别音失败', error);
-        if (runId === playbackRunId) {
-            setPlaybackMode('idle');
-            setStatus('钢琴采样加载失败');
-        }
+        setPlaybackMode('idle');
+        setStatus(`已播放 ${item.note}`);
+      },
+      NOTE_PLAY_SECONDS * 1000 + 120
+    );
+    playbackTimers.push(doneTimer);
+  } catch (error) {
+    console.error('[听音识阶] 播放识别音失败', error);
+    if (runId === playbackRunId) {
+      setPlaybackMode('idle');
+      setStatus('钢琴采样加载失败');
     }
+  }
 }
 
 async function playCapturedSequence() {
-    if (playbackMode === 'playing') {
-        stopPlayback(true);
-        return;
+  if (playbackMode === 'playing') {
+    stopPlayback(true);
+    return;
+  }
+
+  if (capturedNotes.length === 0) {
+    setStatus('没有可播放的音');
+    return;
+  }
+
+  stopPlayback();
+  stopOriginalPlayback();
+  const runId = playbackRunId;
+  const notes = capturedNotes.map((item) => item.note);
+  setPlaybackMode('loading');
+  setStatus('加载钢琴采样');
+
+  try {
+    await getPlaybackContext();
+    const buffers = await Promise.all(notes.map(loadPianoBuffer));
+    if (runId !== playbackRunId) return;
+
+    const delaySeconds = getSequenceDelayMs() / 1000;
+    const startAt = playbackContext.currentTime + 0.04;
+    setPlaybackMode('playing');
+
+    buffers.forEach((buffer, index) => {
+      startPianoBuffer(buffer, notes[index], index, startAt + index * delaySeconds, runId);
+    });
+
+    const totalMs = ((notes.length - 1) * delaySeconds + NOTE_PLAY_SECONDS) * 1000 + 160;
+    const doneTimer = window.setTimeout(() => {
+      if (runId !== playbackRunId) return;
+      clearNotePlaybackStates();
+      setPlaybackMode('idle');
+      setStatus('播放完成');
+    }, totalMs);
+    playbackTimers.push(doneTimer);
+  } catch (error) {
+    console.error('[听音识阶] 播放识别序列失败', error);
+    if (runId === playbackRunId) {
+      setPlaybackMode('idle');
+      setStatus('钢琴采样加载失败');
     }
-
-    if (capturedNotes.length === 0) {
-        setStatus('没有可播放的音');
-        return;
-    }
-
-    stopPlayback();
-    stopOriginalPlayback();
-    const runId = playbackRunId;
-    const notes = capturedNotes.map(item => item.note);
-    setPlaybackMode('loading');
-    setStatus('加载钢琴采样');
-
-    try {
-        await getPlaybackContext();
-        const buffers = await Promise.all(notes.map(loadPianoBuffer));
-        if (runId !== playbackRunId) return;
-
-        const delaySeconds = getSequenceDelayMs() / 1000;
-        const startAt = playbackContext.currentTime + 0.04;
-        setPlaybackMode('playing');
-
-        buffers.forEach((buffer, index) => {
-            startPianoBuffer(buffer, notes[index], index, startAt + index * delaySeconds, runId);
-        });
-
-        const totalMs = ((notes.length - 1) * delaySeconds + NOTE_PLAY_SECONDS) * 1000 + 160;
-        const doneTimer = window.setTimeout(() => {
-            if (runId !== playbackRunId) return;
-            clearNotePlaybackStates();
-            setPlaybackMode('idle');
-            setStatus('播放完成');
-        }, totalMs);
-        playbackTimers.push(doneTimer);
-    } catch (error) {
-        console.error('[听音识阶] 播放识别序列失败', error);
-        if (runId === playbackRunId) {
-            setPlaybackMode('idle');
-            setStatus('钢琴采样加载失败');
-        }
-    }
+  }
 }
 
 function buildScaleCandidate(root, type, pitchClasses) {
-    const scaleClasses = type.offsets.map(offset => (root + offset) % 12);
-    const scaleSet = new Set(scaleClasses);
-    const matched = pitchClasses.filter(pc => scaleSet.has(pc)).length;
-    const score = pitchClasses.length === 0 ? 0 : matched / pitchClasses.length;
-    const degreeMap = new Map();
-    scaleClasses.forEach((pc, index) => degreeMap.set(pc, type.degrees[index]));
+  const scaleClasses = type.offsets.map((offset) => (root + offset) % 12);
+  const scaleSet = new Set(scaleClasses);
+  const matched = pitchClasses.filter((pc) => scaleSet.has(pc)).length;
+  const score = pitchClasses.length === 0 ? 0 : matched / pitchClasses.length;
+  const degreeMap = new Map();
+  scaleClasses.forEach((pc, index) => degreeMap.set(pc, type.degrees[index]));
 
-    return {
-        name: `${NOTE_NAMES[root]}${type.label}`,
-        matched,
-        total: pitchClasses.length,
-        score,
-        degreeMap,
-    };
+  return {
+    name: `${NOTE_NAMES[root]}${type.label}`,
+    matched,
+    total: pitchClasses.length,
+    score,
+    degreeMap,
+  };
 }
 
 function analyzeScales() {
-    const pitchClasses = [...new Set(capturedNotes.map(item => item.pitchClass))];
-    if (pitchClasses.length < 2) {
-        bestScale = null;
-        return [];
-    }
+  const pitchClasses = [...new Set(capturedNotes.map((item) => item.pitchClass))];
+  if (pitchClasses.length < 2) {
+    bestScale = null;
+    return [];
+  }
 
-    const candidates = [];
-    for (let root = 0; root < 12; root += 1) {
-        SCALE_TYPES.forEach(type => candidates.push(buildScaleCandidate(root, type, pitchClasses)));
-    }
+  const candidates = [];
+  for (let root = 0; root < 12; root += 1) {
+    SCALE_TYPES.forEach((type) => candidates.push(buildScaleCandidate(root, type, pitchClasses)));
+  }
 
-    candidates.sort((a, b) => {
-        if (b.score !== a.score) return b.score - a.score;
-        return b.matched - a.matched;
-    });
+  candidates.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return b.matched - a.matched;
+  });
 
-    bestScale = candidates[0] || null;
-    return candidates.slice(0, 3);
+  bestScale = candidates[0] || null;
+  return candidates.slice(0, 3);
 }
 
 function renderScaleCandidates() {
-    const candidates = analyzeScales();
-    if (candidates.length === 0) {
-        els.scaleCandidates.className = 'scale-candidates empty';
-        els.scaleCandidates.textContent = '等待更多音符';
-        return;
-    }
+  const candidates = analyzeScales();
+  if (candidates.length === 0) {
+    els.scaleCandidates.className = 'scale-candidates empty';
+    els.scaleCandidates.textContent = '等待更多音符';
+    return;
+  }
 
-    els.scaleCandidates.className = 'scale-candidates';
-    els.scaleCandidates.innerHTML = candidates.map((candidate, index) => `
+  els.scaleCandidates.className = 'scale-candidates';
+  els.scaleCandidates.innerHTML = candidates
+    .map(
+      (candidate, index) => `
         <div class="scale-candidate ${index === 0 ? 'best' : ''}">
             <strong>${candidate.name}</strong>
             <span>${Math.round(candidate.score * 100)}%</span>
         </div>
-    `).join('');
+    `
+    )
+    .join('');
 }
 
 function renderDegrees() {
-    if (!bestScale || capturedNotes.length === 0) {
-        els.degreeSequence.textContent = '--';
-        return;
-    }
+  if (!bestScale || capturedNotes.length === 0) {
+    els.degreeSequence.textContent = '--';
+    return;
+  }
 
-    els.degreeSequence.textContent = capturedNotes
-        .map(item => bestScale.degreeMap.get(item.pitchClass) || '?')
-        .join(' ');
+  els.degreeSequence.textContent = capturedNotes
+    .map((item) => bestScale.degreeMap.get(item.pitchClass) || '?')
+    .join(' ');
 }
 
 function renderSequence() {
-    if (capturedNotes.length === 0) {
-        els.sequence.className = 'note-sequence empty';
-        els.sequence.textContent = '按住上方按钮开始';
-    } else {
-        els.sequence.className = 'note-sequence';
-        els.sequence.innerHTML = capturedNotes
-            .map((item, index) => `
+  if (capturedNotes.length === 0) {
+    els.sequence.className = 'note-sequence empty';
+    els.sequence.textContent = '按住上方按钮开始';
+  } else {
+    els.sequence.className = 'note-sequence';
+    els.sequence.innerHTML = capturedNotes
+      .map(
+        (item, index) => `
                 <button class="note-chip" type="button" data-index="${index}" aria-label="播放 ${item.note}" title="播放 ${item.note}">
                     ${item.note}
                 </button>
-            `)
-            .join('');
-    }
+            `
+      )
+      .join('');
+  }
 
-    renderScaleCandidates();
-    renderDegrees();
-    setPlaybackMode(playbackMode === 'playing' ? 'playing' : 'idle');
+  renderScaleCandidates();
+  renderDegrees();
+  setPlaybackMode(playbackMode === 'playing' ? 'playing' : 'idle');
 }
 
 function median(values) {
-    if (values.length === 0) return 0;
-    const sorted = [...values].sort((a, b) => a - b);
-    const middle = Math.floor(sorted.length / 2);
-    return sorted.length % 2 === 0
-        ? (sorted[middle - 1] + sorted[middle]) / 2
-        : sorted[middle];
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
 }
 
 function percentile(values, ratio) {
-    if (values.length === 0) return 0;
-    const sorted = [...values].sort((a, b) => a - b);
-    const index = clamp(Math.round((sorted.length - 1) * ratio), 0, sorted.length - 1);
-    return sorted[index];
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = clamp(Math.round((sorted.length - 1) * ratio), 0, sorted.length - 1);
+  return sorted[index];
 }
 
 function nextPowerOfTwo(value) {
-    let power = 1;
-    while (power < value) power *= 2;
-    return power;
+  let power = 1;
+  while (power < value) power *= 2;
+  return power;
 }
 
 function getHannWindow(size) {
-    if (hannWindowCache.has(size)) return hannWindowCache.get(size);
+  if (hannWindowCache.has(size)) return hannWindowCache.get(size);
 
-    const windowValues = new Float32Array(size);
-    for (let index = 0; index < size; index += 1) {
-        windowValues[index] = 0.5 - 0.5 * Math.cos((2 * Math.PI * index) / Math.max(1, size - 1));
-    }
+  const windowValues = new Float32Array(size);
+  for (let index = 0; index < size; index += 1) {
+    windowValues[index] = 0.5 - 0.5 * Math.cos((2 * Math.PI * index) / Math.max(1, size - 1));
+  }
 
-    hannWindowCache.set(size, windowValues);
-    return windowValues;
+  hannWindowCache.set(size, windowValues);
+  return windowValues;
 }
 
 function calculateRmsRange(samples, start, end) {
-    const safeStart = clamp(Math.floor(start), 0, samples.length);
-    const safeEnd = clamp(Math.floor(end), safeStart, samples.length);
-    const length = safeEnd - safeStart;
-    if (length <= 0) return 0;
+  const safeStart = clamp(Math.floor(start), 0, samples.length);
+  const safeEnd = clamp(Math.floor(end), safeStart, samples.length);
+  const length = safeEnd - safeStart;
+  if (length <= 0) return 0;
 
-    let sumSquares = 0;
-    for (let index = safeStart; index < safeEnd; index += 1) {
-        const sample = samples[index];
-        sumSquares += sample * sample;
-    }
+  let sumSquares = 0;
+  for (let index = safeStart; index < safeEnd; index += 1) {
+    const sample = samples[index];
+    sumSquares += sample * sample;
+  }
 
-    return Math.sqrt(sumSquares / length);
+  return Math.sqrt(sumSquares / length);
 }
 
 function getPeakAmplitude(samples) {
-    let peak = 0;
-    for (let index = 0; index < samples.length; index += 1) {
-        peak = Math.max(peak, Math.abs(samples[index]));
-    }
-    return peak;
+  let peak = 0;
+  for (let index = 0; index < samples.length; index += 1) {
+    peak = Math.max(peak, Math.abs(samples[index]));
+  }
+  return peak;
 }
 
 function getNormalizationPeak(samples, peak) {
-    if (peak <= 0.000001) return peak;
+  if (peak <= 0.000001) return peak;
 
-    const step = Math.max(1, Math.ceil(samples.length / 24000));
-    const amplitudes = [];
-    for (let index = 0; index < samples.length; index += step) {
-        amplitudes.push(Math.abs(samples[index]));
-    }
+  const step = Math.max(1, Math.ceil(samples.length / 24000));
+  const amplitudes = [];
+  for (let index = 0; index < samples.length; index += step) {
+    amplitudes.push(Math.abs(samples[index]));
+  }
 
-    const p995 = percentile(amplitudes, 0.995);
-    const p999 = percentile(amplitudes, 0.999);
-    const robustPeak = Math.max(p995 * 1.8, p999 * 1.12, peak * 0.08, 0.000001);
-    return Math.min(peak, robustPeak);
+  const p995 = percentile(amplitudes, 0.995);
+  const p999 = percentile(amplitudes, 0.999);
+  const robustPeak = Math.max(p995 * 1.8, p999 * 1.12, peak * 0.08, 0.000001);
+  return Math.min(peak, robustPeak);
 }
 
 function normalizeSamples(samples) {
-    const peak = getPeakAmplitude(samples);
-    const rawRms = calculateRmsRange(samples, 0, samples.length);
-    if (peak <= 0.000001) {
-        return { samples: new Float32Array(samples), peak, normalizationPeak: peak, rawRms, gain: 1 };
-    }
+  const peak = getPeakAmplitude(samples);
+  const rawRms = calculateRmsRange(samples, 0, samples.length);
+  if (peak <= 0.000001) {
+    return { samples: new Float32Array(samples), peak, normalizationPeak: peak, rawRms, gain: 1 };
+  }
 
-    const normalizationPeak = getNormalizationPeak(samples, peak);
-    const gain = Math.min(36, 0.82 / Math.max(normalizationPeak, 0.000001));
-    const normalized = new Float32Array(samples.length);
-    for (let index = 0; index < samples.length; index += 1) {
-        normalized[index] = clamp(samples[index] * gain, -1, 1);
-    }
+  const normalizationPeak = getNormalizationPeak(samples, peak);
+  const gain = Math.min(36, 0.82 / Math.max(normalizationPeak, 0.000001));
+  const normalized = new Float32Array(samples.length);
+  for (let index = 0; index < samples.length; index += 1) {
+    normalized[index] = clamp(samples[index] * gain, -1, 1);
+  }
 
-    return { samples: normalized, peak, normalizationPeak, rawRms, gain };
+  return { samples: normalized, peak, normalizationPeak, rawRms, gain };
 }
 
 function removeDcAndHighPass(samples, sampleRate) {
-    if (samples.length === 0) return samples;
+  if (samples.length === 0) return samples;
 
-    let mean = 0;
-    for (let index = 0; index < samples.length; index += 1) {
-        mean += samples[index];
-    }
-    mean /= samples.length;
+  let mean = 0;
+  for (let index = 0; index < samples.length; index += 1) {
+    mean += samples[index];
+  }
+  mean /= samples.length;
 
-    const filtered = new Float32Array(samples.length);
-    const cutoff = 70;
-    const rc = 1 / (2 * Math.PI * cutoff);
-    const dt = 1 / sampleRate;
-    const alpha = rc / (rc + dt);
-    let previousInput = samples[0] - mean;
-    let previousOutput = 0;
+  const filtered = new Float32Array(samples.length);
+  const cutoff = 70;
+  const rc = 1 / (2 * Math.PI * cutoff);
+  const dt = 1 / sampleRate;
+  const alpha = rc / (rc + dt);
+  let previousInput = samples[0] - mean;
+  let previousOutput = 0;
 
-    for (let index = 0; index < samples.length; index += 1) {
-        const input = samples[index] - mean;
-        const output = alpha * (previousOutput + input - previousInput);
-        filtered[index] = output;
-        previousInput = input;
-        previousOutput = output;
-    }
+  for (let index = 0; index < samples.length; index += 1) {
+    const input = samples[index] - mean;
+    const output = alpha * (previousOutput + input - previousInput);
+    filtered[index] = output;
+    previousInput = input;
+    previousOutput = output;
+  }
 
-    return filtered;
+  return filtered;
+}
+
+function lowPassFilter(samples, sampleRate, cutoff = 5200) {
+  if (samples.length === 0 || cutoff >= sampleRate / 2) return new Float32Array(samples);
+
+  const filtered = new Float32Array(samples.length);
+  const rc = 1 / (2 * Math.PI * cutoff);
+  const dt = 1 / sampleRate;
+  const alpha = dt / (rc + dt);
+  let previousOutput = samples[0];
+
+  for (let index = 0; index < samples.length; index += 1) {
+    previousOutput += alpha * (samples[index] - previousOutput);
+    filtered[index] = previousOutput;
+  }
+
+  return filtered;
 }
 
 function estimateNoiseProfile(samples, sampleRate, frameSize, hopSize) {
-    const candidates = [];
-    const leadingUntil = Math.min(samples.length, Math.round((sampleRate * DENOISE_NOISE_PROFILE_MS) / 1000));
+  const candidates = [];
+  const leadingUntil = Math.min(
+    samples.length,
+    Math.round((sampleRate * DENOISE_NOISE_PROFILE_MS) / 1000)
+  );
 
-    for (let start = 0; start < samples.length; start += hopSize) {
-        const end = Math.min(start + frameSize, samples.length);
-        if (end - start < frameSize * 0.7) break;
-        const rms = calculateRmsRange(samples, start, end);
-        const prefer = start < leadingUntil ? -0.00001 : 0;
-        candidates.push({ start, rms: rms + prefer });
+  for (let start = 0; start < samples.length; start += hopSize) {
+    const end = Math.min(start + frameSize, samples.length);
+    if (end - start < frameSize * 0.7) break;
+    const rms = calculateRmsRange(samples, start, end);
+    const prefer = start < leadingUntil ? -0.00001 : 0;
+    candidates.push({ start, rms: rms + prefer });
+  }
+
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => a.rms - b.rms);
+  const selected = candidates.slice(0, clamp(Math.ceil(candidates.length * 0.18), 3, 12));
+  const noise = new Float32Array(frameSize / 2 + 1);
+  const real = new Float32Array(frameSize);
+  const imag = new Float32Array(frameSize);
+  const windowValues = getHannWindow(frameSize);
+
+  selected.forEach((candidate) => {
+    real.fill(0);
+    imag.fill(0);
+    for (let index = 0; index < frameSize; index += 1) {
+      real[index] = (samples[candidate.start + index] || 0) * windowValues[index];
     }
-
-    if (candidates.length === 0) return null;
-
-    candidates.sort((a, b) => a.rms - b.rms);
-    const selected = candidates.slice(0, clamp(Math.ceil(candidates.length * 0.18), 3, 12));
-    const noise = new Float32Array(frameSize / 2 + 1);
-    const real = new Float32Array(frameSize);
-    const imag = new Float32Array(frameSize);
-    const windowValues = getHannWindow(frameSize);
-
-    selected.forEach(candidate => {
-        real.fill(0);
-        imag.fill(0);
-        for (let index = 0; index < frameSize; index += 1) {
-            real[index] = (samples[candidate.start + index] || 0) * windowValues[index];
-        }
-        runFft(real, imag);
-        for (let bin = 0; bin < noise.length; bin += 1) {
-            noise[bin] += Math.hypot(real[bin], imag[bin]);
-        }
-    });
-
+    runFft(real, imag);
     for (let bin = 0; bin < noise.length; bin += 1) {
-        noise[bin] /= selected.length;
+      noise[bin] += Math.hypot(real[bin], imag[bin]);
     }
+  });
 
-    return noise;
+  for (let bin = 0; bin < noise.length; bin += 1) {
+    noise[bin] /= selected.length;
+  }
+
+  return noise;
 }
 
 function inverseFft(real, imag) {
-    for (let index = 0; index < real.length; index += 1) {
-        imag[index] = -imag[index];
-    }
+  for (let index = 0; index < real.length; index += 1) {
+    imag[index] = -imag[index];
+  }
 
-    runFft(real, imag);
+  runFft(real, imag);
 
-    const scale = 1 / real.length;
-    for (let index = 0; index < real.length; index += 1) {
-        real[index] *= scale;
-        imag[index] = (-imag[index]) * scale;
-    }
+  const scale = 1 / real.length;
+  for (let index = 0; index < real.length; index += 1) {
+    real[index] *= scale;
+    imag[index] = -imag[index] * scale;
+  }
 }
 
 function spectralDenoise(samples, sampleRate) {
-    if (samples.length < sampleRate * 0.18) return samples;
+  if (samples.length < sampleRate * 0.18) return samples;
 
-    const frameSize = nextPowerOfTwo(Math.round((sampleRate * DENOISE_FRAME_MS) / 1000));
-    const hopSize = Math.floor(frameSize / 2);
-    const noise = estimateNoiseProfile(samples, sampleRate, frameSize, hopSize);
-    if (!noise) return samples;
+  const rawPeak = getPeakAmplitude(samples);
+  const frameSize = nextPowerOfTwo(Math.round((sampleRate * DENOISE_FRAME_MS) / 1000));
+  const hopSize = Math.floor(frameSize / 2);
+  const noise = estimateNoiseProfile(samples, sampleRate, frameSize, hopSize);
+  if (!noise) return samples;
 
-    const rawRms = calculateRmsRange(samples, 0, samples.length);
-    const weakInput = rawRms < 0.004;
-    const output = new Float32Array(samples.length + frameSize);
-    const weights = new Float32Array(output.length);
-    const real = new Float32Array(frameSize);
-    const imag = new Float32Array(frameSize);
-    const windowValues = getHannWindow(frameSize);
-    const floor = weakInput ? 0.28 : 0.12;
-    const subtraction = weakInput ? 1.08 : 1.55;
-    const cleanRatio = weakInput ? 5.5 : 8;
+  const rawRms = calculateRmsRange(samples, 0, samples.length);
+  const weakInput = rawRms < 0.004;
+  const output = new Float32Array(samples.length + frameSize);
+  const weights = new Float32Array(output.length);
+  const real = new Float32Array(frameSize);
+  const imag = new Float32Array(frameSize);
+  const windowValues = getHannWindow(frameSize);
+  const floor = weakInput ? 0.28 : 0.12;
+  const subtraction = weakInput ? 1.08 : 1.55;
+  const cleanRatio = weakInput ? 5.5 : 8;
 
-    for (let start = 0; start < samples.length; start += hopSize) {
-        real.fill(0);
-        imag.fill(0);
+  for (let start = 0; start < samples.length; start += hopSize) {
+    real.fill(0);
+    imag.fill(0);
 
-        for (let index = 0; index < frameSize; index += 1) {
-            real[index] = (samples[start + index] || 0) * windowValues[index];
-        }
-
-        runFft(real, imag);
-
-        for (let bin = 0; bin <= frameSize / 2; bin += 1) {
-            const magnitude = Math.hypot(real[bin], imag[bin]);
-            const noiseMagnitude = noise[bin] || 0;
-            const signalOverNoise = magnitude / Math.max(noiseMagnitude, 0.000001);
-            const reduction = signalOverNoise > cleanRatio
-                ? 1
-                : clamp((magnitude - noiseMagnitude * subtraction) / Math.max(magnitude, 0.000001), floor, 1);
-            real[bin] *= reduction;
-            imag[bin] *= reduction;
-
-            if (bin > 0 && bin < frameSize / 2) {
-                const mirror = frameSize - bin;
-                real[mirror] *= reduction;
-                imag[mirror] *= reduction;
-            }
-        }
-
-        inverseFft(real, imag);
-
-        for (let index = 0; index < frameSize; index += 1) {
-            const outIndex = start + index;
-            const weight = windowValues[index];
-            output[outIndex] += real[index] * weight;
-            weights[outIndex] += weight * weight;
-        }
+    for (let index = 0; index < frameSize; index += 1) {
+      real[index] = (samples[start + index] || 0) * windowValues[index];
     }
 
-    const denoised = new Float32Array(samples.length);
-    for (let index = 0; index < denoised.length; index += 1) {
-        denoised[index] = weights[index] > 0 ? output[index] / weights[index] : samples[index];
+    runFft(real, imag);
+
+    for (let bin = 0; bin <= frameSize / 2; bin += 1) {
+      const magnitude = Math.hypot(real[bin], imag[bin]);
+      const noiseMagnitude = noise[bin] || 0;
+      const signalOverNoise = magnitude / Math.max(noiseMagnitude, 0.000001);
+      const reduction =
+        signalOverNoise > cleanRatio
+          ? 1
+          : clamp(
+              (magnitude - noiseMagnitude * subtraction) / Math.max(magnitude, 0.000001),
+              floor,
+              1
+            );
+      real[bin] *= reduction;
+      imag[bin] *= reduction;
+
+      if (bin > 0 && bin < frameSize / 2) {
+        const mirror = frameSize - bin;
+        real[mirror] *= reduction;
+        imag[mirror] *= reduction;
+      }
     }
 
-    return denoised;
+    inverseFft(real, imag);
+
+    for (let index = 0; index < frameSize; index += 1) {
+      const outIndex = start + index;
+      const weight = windowValues[index];
+      output[outIndex] += real[index] * weight;
+      weights[outIndex] += weight * weight;
+    }
+  }
+
+  const denoised = new Float32Array(samples.length);
+  const limiter = Math.max(0.025, rawPeak * 2.8);
+  for (let index = 0; index < denoised.length; index += 1) {
+    const value = weights[index] > 0.02 ? output[index] / weights[index] : samples[index];
+    denoised[index] = clamp(value, -limiter, limiter);
+  }
+
+  return denoised;
 }
 
 function softNoiseGate(samples, sampleRate) {
-    const filtered = new Float32Array(samples);
-    const noiseWindow = Math.max(512, Math.min(filtered.length, Math.round(sampleRate * 0.25)));
-    const leadingRms = calculateRmsRange(filtered, 0, noiseWindow);
-    const frameSize = Math.max(512, Math.round(sampleRate * 0.035));
-    const hopSize = Math.max(256, Math.floor(frameSize / 2));
-    const frameRmsValues = [];
+  const filtered = new Float32Array(samples);
+  const noiseWindow = Math.max(512, Math.min(filtered.length, Math.round(sampleRate * 0.25)));
+  const leadingRms = calculateRmsRange(filtered, 0, noiseWindow);
+  const frameSize = Math.max(512, Math.round(sampleRate * 0.035));
+  const hopSize = Math.max(256, Math.floor(frameSize / 2));
+  const frameRmsValues = [];
 
-    for (let start = 0; start < filtered.length; start += hopSize) {
-        const end = Math.min(filtered.length, start + frameSize);
-        if (end - start < frameSize * 0.6) break;
-        frameRmsValues.push(calculateRmsRange(filtered, start, end));
+  for (let start = 0; start < filtered.length; start += hopSize) {
+    const end = Math.min(filtered.length, start + frameSize);
+    if (end - start < frameSize * 0.6) break;
+    frameRmsValues.push(calculateRmsRange(filtered, start, end));
+  }
+
+  const quietRms = frameRmsValues.length > 0 ? percentile(frameRmsValues, 0.18) : leadingRms;
+  const gate = Math.min(0.006, Math.max(0, Math.min(leadingRms * 0.55, quietRms * 1.35)));
+
+  if (gate <= 0.00008) return filtered;
+
+  for (let index = 0; index < filtered.length; index += 1) {
+    const value = filtered[index];
+    const magnitude = Math.abs(value);
+    if (magnitude < gate) {
+      filtered[index] = value * 0.22;
+    } else {
+      filtered[index] = Math.sign(value) * (magnitude - gate * 0.35);
     }
+  }
 
-    const quietRms = frameRmsValues.length > 0 ? percentile(frameRmsValues, 0.18) : leadingRms;
-    const gate = Math.min(0.006, Math.max(0, Math.min(leadingRms * 0.55, quietRms * 1.35)));
-
-    if (gate <= 0.00008) return filtered;
-
-    for (let index = 0; index < filtered.length; index += 1) {
-        const value = filtered[index];
-        const magnitude = Math.abs(value);
-        if (magnitude < gate) {
-            filtered[index] = value * 0.22;
-        } else {
-            filtered[index] = Math.sign(value) * (magnitude - gate * 0.35);
-        }
-    }
-
-    return filtered;
+  return filtered;
 }
 
 function preprocessSamples(samples, sampleRate) {
-    const highPassed = removeDcAndHighPass(samples, sampleRate);
-    if (calculateRmsRange(highPassed, 0, highPassed.length) < 0.006) {
-        return softNoiseGate(highPassed, sampleRate);
-    }
+  const highPassed = removeDcAndHighPass(samples, sampleRate);
+  const bandLimited = lowPassFilter(highPassed, sampleRate);
+  if (calculateRmsRange(bandLimited, 0, bandLimited.length) < 0.006) {
+    return softNoiseGate(bandLimited, sampleRate);
+  }
 
-    const denoised = spectralDenoise(highPassed, sampleRate);
-    return softNoiseGate(denoised, sampleRate);
+  const denoised = spectralDenoise(bandLimited, sampleRate);
+  return softNoiseGate(denoised, sampleRate);
 }
 
 function resetPcmCapture() {
-    pcmChunks = [];
-    pcmSampleCount = 0;
-    pcmSampleRate = audioContext?.sampleRate || 0;
+  pcmChunks = [];
+  pcmSampleCount = 0;
+  pcmSampleRate = audioContext?.sampleRate || 0;
 }
 
 function appendPcmCapture(inputBuffer) {
-    if (!recording || !inputBuffer) return;
+  if (!recording || !inputBuffer) return;
 
-    const channelCount = Math.max(1, inputBuffer.numberOfChannels);
-    const length = inputBuffer.length;
-    const chunk = new Float32Array(length);
+  const channelCount = Math.max(1, inputBuffer.numberOfChannels);
+  const length = inputBuffer.length;
+  const chunk = new Float32Array(length);
 
-    for (let channel = 0; channel < channelCount; channel += 1) {
-        const data = inputBuffer.getChannelData(channel);
-        for (let index = 0; index < length; index += 1) {
-            chunk[index] += data[index] / channelCount;
-        }
+  for (let channel = 0; channel < channelCount; channel += 1) {
+    const data = inputBuffer.getChannelData(channel);
+    for (let index = 0; index < length; index += 1) {
+      chunk[index] += data[index] / channelCount;
     }
+  }
 
-    pcmChunks.push(chunk);
-    pcmSampleCount += chunk.length;
+  pcmChunks.push(chunk);
+  pcmSampleCount += chunk.length;
 }
 
 function appendPcmSamples(samples) {
-    if (!recording || !samples?.length) return;
+  if (!recording || !samples?.length) return;
 
-    const chunk = new Float32Array(samples);
-    pcmChunks.push(chunk);
-    pcmSampleCount += chunk.length;
+  const chunk = new Float32Array(samples);
+  pcmChunks.push(chunk);
+  pcmSampleCount += chunk.length;
 }
 
 function getCapturedPcmRecording() {
-    if (pcmSampleCount === 0 || !pcmSampleRate) return null;
+  if (pcmSampleCount === 0 || !pcmSampleRate) return null;
 
-    const samples = new Float32Array(pcmSampleCount);
-    let offset = 0;
-    pcmChunks.forEach(chunk => {
-        samples.set(chunk, offset);
-        offset += chunk.length;
-    });
+  const samples = new Float32Array(pcmSampleCount);
+  let offset = 0;
+  pcmChunks.forEach((chunk) => {
+    samples.set(chunk, offset);
+    offset += chunk.length;
+  });
 
-    return {
-        samples,
-        sampleRate: pcmSampleRate,
-    };
+  return {
+    samples,
+    sampleRate: pcmSampleRate,
+  };
 }
 
 function runFft(real, imag) {
-    const size = real.length;
-    let reversed = 0;
+  const size = real.length;
+  let reversed = 0;
 
-    for (let index = 1; index < size; index += 1) {
-        let bit = size >> 1;
-        while (reversed & bit) {
-            reversed ^= bit;
-            bit >>= 1;
-        }
-        reversed ^= bit;
-
-        if (index < reversed) {
-            const tempReal = real[index];
-            const tempImag = imag[index];
-            real[index] = real[reversed];
-            imag[index] = imag[reversed];
-            real[reversed] = tempReal;
-            imag[reversed] = tempImag;
-        }
+  for (let index = 1; index < size; index += 1) {
+    let bit = size >> 1;
+    while (reversed & bit) {
+      reversed ^= bit;
+      bit >>= 1;
     }
+    reversed ^= bit;
 
-    for (let length = 2; length <= size; length *= 2) {
-        const angle = (-2 * Math.PI) / length;
-        const stepReal = Math.cos(angle);
-        const stepImag = Math.sin(angle);
-
-        for (let offset = 0; offset < size; offset += length) {
-            let unitReal = 1;
-            let unitImag = 0;
-            const half = length / 2;
-
-            for (let index = 0; index < half; index += 1) {
-                const evenIndex = offset + index;
-                const oddIndex = evenIndex + half;
-                const oddReal = real[oddIndex] * unitReal - imag[oddIndex] * unitImag;
-                const oddImag = real[oddIndex] * unitImag + imag[oddIndex] * unitReal;
-
-                real[oddIndex] = real[evenIndex] - oddReal;
-                imag[oddIndex] = imag[evenIndex] - oddImag;
-                real[evenIndex] += oddReal;
-                imag[evenIndex] += oddImag;
-
-                const nextReal = unitReal * stepReal - unitImag * stepImag;
-                unitImag = unitReal * stepImag + unitImag * stepReal;
-                unitReal = nextReal;
-            }
-        }
+    if (index < reversed) {
+      const tempReal = real[index];
+      const tempImag = imag[index];
+      real[index] = real[reversed];
+      imag[index] = imag[reversed];
+      real[reversed] = tempReal;
+      imag[reversed] = tempImag;
     }
+  }
+
+  for (let length = 2; length <= size; length *= 2) {
+    const angle = (-2 * Math.PI) / length;
+    const stepReal = Math.cos(angle);
+    const stepImag = Math.sin(angle);
+
+    for (let offset = 0; offset < size; offset += length) {
+      let unitReal = 1;
+      let unitImag = 0;
+      const half = length / 2;
+
+      for (let index = 0; index < half; index += 1) {
+        const evenIndex = offset + index;
+        const oddIndex = evenIndex + half;
+        const oddReal = real[oddIndex] * unitReal - imag[oddIndex] * unitImag;
+        const oddImag = real[oddIndex] * unitImag + imag[oddIndex] * unitReal;
+
+        real[oddIndex] = real[evenIndex] - oddReal;
+        imag[oddIndex] = imag[evenIndex] - oddImag;
+        real[evenIndex] += oddReal;
+        imag[evenIndex] += oddImag;
+
+        const nextReal = unitReal * stepReal - unitImag * stepImag;
+        unitImag = unitReal * stepImag + unitImag * stepReal;
+        unitReal = nextReal;
+      }
+    }
+  }
 }
 
 function computeSpectrumMagnitudes(samples, start, frameSize, fftSize, maxBin) {
-    const real = new Float32Array(fftSize);
-    const imag = new Float32Array(fftSize);
-    const windowValues = getHannWindow(frameSize);
-    const available = Math.max(0, Math.min(frameSize, samples.length - start));
+  const real = new Float32Array(fftSize);
+  const imag = new Float32Array(fftSize);
+  const windowValues = getHannWindow(frameSize);
+  const available = Math.max(0, Math.min(frameSize, samples.length - start));
 
-    for (let index = 0; index < available; index += 1) {
-        real[index] = samples[start + index] * windowValues[index];
-    }
+  for (let index = 0; index < available; index += 1) {
+    real[index] = samples[start + index] * windowValues[index];
+  }
 
-    runFft(real, imag);
+  runFft(real, imag);
 
-    const magnitudes = new Float32Array(maxBin + 1);
-    const scale = 1 / fftSize;
-    for (let bin = 0; bin <= maxBin; bin += 1) {
-        magnitudes[bin] = Math.log1p(Math.hypot(real[bin], imag[bin]) * scale * 120);
-    }
+  const magnitudes = new Float32Array(maxBin + 1);
+  const scale = 1 / fftSize;
+  for (let bin = 0; bin <= maxBin; bin += 1) {
+    magnitudes[bin] = Math.log1p(Math.hypot(real[bin], imag[bin]) * scale * 120);
+  }
 
-    return magnitudes;
+  return magnitudes;
 }
 
 function createOfflineFeatureFrames(samples, sampleRate) {
-    const frameSize = nextPowerOfTwo(Math.max(1024, Math.round((sampleRate * OFFLINE_FRAME_MS) / 1000)));
-    const hopSize = Math.max(128, Math.round((sampleRate * OFFLINE_HOP_MS) / 1000));
-    const maxBin = Math.min(
-        Math.floor((OFFLINE_SPECTRUM_MAX_FREQ / sampleRate) * frameSize),
-        Math.floor(frameSize / 2),
-    );
-    const features = [];
-    let previousMagnitudes = null;
+  const frameSize = nextPowerOfTwo(
+    Math.max(1024, Math.round((sampleRate * OFFLINE_FRAME_MS) / 1000))
+  );
+  const hopSize = Math.max(128, Math.round((sampleRate * OFFLINE_HOP_MS) / 1000));
+  const maxBin = Math.min(
+    Math.floor((OFFLINE_SPECTRUM_MAX_FREQ / sampleRate) * frameSize),
+    Math.floor(frameSize / 2)
+  );
+  const features = [];
+  let previousMagnitudes = null;
 
-    for (let start = 0; start < samples.length; start += hopSize) {
-        const end = Math.min(start + frameSize, samples.length);
-        const length = end - start;
-        if (features.length > 0 && length < frameSize * 0.35) break;
+  for (let start = 0; start < samples.length; start += hopSize) {
+    const end = Math.min(start + frameSize, samples.length);
+    const length = end - start;
+    if (features.length > 0 && length < frameSize * 0.35) break;
 
-        const magnitudes = computeSpectrumMagnitudes(samples, start, frameSize, frameSize, maxBin);
-        let spectralFlux = 0;
-        if (previousMagnitudes) {
-            for (let bin = 1; bin <= maxBin; bin += 1) {
-                spectralFlux += Math.max(0, magnitudes[bin] - previousMagnitudes[bin]);
-            }
-            spectralFlux /= Math.max(1, maxBin);
-        }
-
-        features.push({
-            startMs: (start / sampleRate) * 1000,
-            endMs: (end / sampleRate) * 1000,
-            time: ((start + length / 2) / sampleRate) * 1000,
-            rms: calculateRmsRange(samples, start, end),
-            spectralFlux,
-        });
-        previousMagnitudes = magnitudes;
+    const magnitudes = computeSpectrumMagnitudes(samples, start, frameSize, frameSize, maxBin);
+    let spectralFlux = 0;
+    if (previousMagnitudes) {
+      for (let bin = 1; bin <= maxBin; bin += 1) {
+        spectralFlux += Math.max(0, magnitudes[bin] - previousMagnitudes[bin]);
+      }
+      spectralFlux /= Math.max(1, maxBin);
     }
 
-    return features;
+    features.push({
+      startMs: (start / sampleRate) * 1000,
+      endMs: (end / sampleRate) * 1000,
+      time: ((start + length / 2) / sampleRate) * 1000,
+      rms: calculateRmsRange(samples, start, end),
+      spectralFlux,
+    });
+    previousMagnitudes = magnitudes;
+  }
+
+  return features;
 }
 
 function getOfflineThresholds(features) {
-    const rmsValues = features.map(frame => frame.rms);
-    const fluxValues = features.map(frame => frame.spectralFlux);
-    const leadingRms = features.slice(0, Math.min(12, features.length)).map(frame => frame.rms);
-    const noiseRms = Math.max(0.0001, Math.min(median(leadingRms), percentile(rmsValues, 0.35)));
-    const highRms = percentile(rmsValues, 0.9);
-    const activeFloor = highRms < 0.002 ? 0.00018 : highRms < 0.018 ? 0.0012 : 0.004;
-    const activeRms = Math.max(activeFloor, noiseRms * 1.6, highRms * 0.16);
-    const fluxMedian = percentile(fluxValues, 0.5);
-    const fluxHigh = percentile(fluxValues, 0.9);
-    const fluxFloor = highRms < 0.002 ? 0.0002 : highRms < 0.018 ? 0.003 : 0.006;
-    const flux = Math.max(fluxFloor, fluxMedian * 2.2, fluxHigh * 0.42);
+  const rmsValues = features.map((frame) => frame.rms);
+  const fluxValues = features.map((frame) => frame.spectralFlux);
+  const leadingRms = features.slice(0, Math.min(12, features.length)).map((frame) => frame.rms);
+  const highRms = percentile(rmsValues, 0.9);
+  const lowRms = percentile(rmsValues, 0.12);
+  const noiseRms = Math.max(0.0001, Math.min(lowRms, median(leadingRms) * 0.72, highRms * 0.22));
+  const activeFloor = highRms < 0.002 ? 0.00018 : highRms < 0.018 ? 0.0012 : 0.004;
+  const activeRms = Math.min(
+    Math.max(activeFloor, noiseRms * 1.7, highRms * 0.16),
+    Math.max(activeFloor, highRms * 0.72)
+  );
+  const fluxMedian = percentile(fluxValues, 0.5);
+  const fluxHigh = percentile(fluxValues, 0.9);
+  const fluxFloor = highRms < 0.002 ? 0.0002 : highRms < 0.018 ? 0.003 : 0.006;
+  const flux = Math.max(fluxFloor, fluxMedian * 2.2, fluxHigh * 0.42);
 
-    return {
-        activeRms,
-        noiseRms,
-        flux,
-    };
+  return {
+    activeRms,
+    noiseRms,
+    flux,
+  };
 }
 
 function smoothFeatureFlux(features) {
-    return features.map((frame, index) => {
-        const previous = features[index - 1]?.spectralFlux ?? frame.spectralFlux;
-        const next = features[index + 1]?.spectralFlux ?? frame.spectralFlux;
-        return (previous + frame.spectralFlux * 2 + next) / 4;
-    });
+  return features.map((frame, index) => {
+    const previous = features[index - 1]?.spectralFlux ?? frame.spectralFlux;
+    const next = features[index + 1]?.spectralFlux ?? frame.spectralFlux;
+    return (previous + frame.spectralFlux * 2 + next) / 4;
+  });
 }
 
 function getLocalFluxBaseline(smoothedFlux, index) {
-    const start = Math.max(0, index - 6);
-    const end = Math.min(smoothedFlux.length, index + 7);
-    return median(smoothedFlux.slice(start, end));
+  const start = Math.max(0, index - 6);
+  const end = Math.min(smoothedFlux.length, index + 7);
+  return median(smoothedFlux.slice(start, end));
 }
 
 function normalizeSeries(values) {
-    const high = percentile(values, 0.92);
-    const low = percentile(values, 0.2);
-    const span = Math.max(0.000001, high - low);
-    return values.map(value => clamp((value - low) / span, 0, 1.8));
+  const high = percentile(values, 0.92);
+  const low = percentile(values, 0.2);
+  const span = Math.max(0.000001, high - low);
+  return values.map((value) => clamp((value - low) / span, 0, 1.8));
 }
 
 function getNoveltyCurve(features) {
-    const smoothedFlux = smoothFeatureFlux(features);
-    const flux = normalizeSeries(smoothedFlux);
-    const rmsRise = features.map((frame, index) => {
-        if (index === 0) return 0;
-        return Math.max(0, frame.rms - features[index - 1].rms);
-    });
-    const rms = normalizeSeries(rmsRise);
+  const smoothedFlux = smoothFeatureFlux(features);
+  const flux = normalizeSeries(smoothedFlux);
+  const rmsRise = features.map((frame, index) => {
+    if (index === 0) return 0;
+    return Math.max(0, frame.rms - features[index - 1].rms);
+  });
+  const rms = normalizeSeries(rmsRise);
 
-    return features.map((frame, index) => ({
-        time: frame.time,
-        startMs: frame.startMs,
-        value: flux[index] * 0.72 + rms[index] * 0.28,
-    }));
+  return features.map((frame, index) => ({
+    time: frame.time,
+    startMs: frame.startMs,
+    value: flux[index] * 0.72 + rms[index] * 0.28,
+  }));
 }
 
 function getActiveRanges(features, thresholds) {
-    const ranges = [];
-    let current = null;
+  const ranges = [];
+  let current = null;
 
-    features.forEach(frame => {
-        if (frame.rms >= thresholds.activeRms) {
-            if (!current) current = { startMs: frame.startMs, endMs: frame.endMs };
-            current.endMs = frame.endMs;
-            return;
-        }
+  features.forEach((frame) => {
+    if (frame.rms >= thresholds.activeRms) {
+      if (!current) current = { startMs: frame.startMs, endMs: frame.endMs };
+      current.endMs = frame.endMs;
+      return;
+    }
 
-        if (current) {
-            ranges.push(current);
-            current = null;
-        }
-    });
+    if (current) {
+      ranges.push(current);
+      current = null;
+    }
+  });
 
-    if (current) ranges.push(current);
+  if (current) ranges.push(current);
 
-    return ranges.reduce((merged, range) => {
-        const previous = merged[merged.length - 1];
-        if (previous && range.startMs - previous.endMs <= 34) {
-            previous.endMs = range.endMs;
-        } else if (range.endMs - range.startMs >= OFFLINE_MIN_SEGMENT_MS * 0.65) {
-            merged.push({ ...range });
-        }
-        return merged;
-    }, []);
+  const mergedRanges = ranges.reduce((merged, range) => {
+    const previous = merged[merged.length - 1];
+    if (previous && range.startMs - previous.endMs <= 34) {
+      previous.endMs = range.endMs;
+    } else if (range.endMs - range.startMs >= OFFLINE_MIN_SEGMENT_MS * 0.65) {
+      merged.push({ ...range });
+    }
+    return merged;
+  }, []);
+
+  return expandActiveRangeEdges(mergedRanges, features, thresholds);
+}
+
+function expandActiveRangeEdges(ranges, features, thresholds) {
+  if (ranges.length === 0 || features.length === 0) return ranges;
+
+  const sustainFloor = Math.max(0.00012, thresholds.noiseRms * 1.25, thresholds.activeRms * 0.68);
+
+  return ranges.map((range) => {
+    let startIndex = features.findIndex((frame) => frame.endMs >= range.startMs);
+    let endIndex = -1;
+
+    for (let index = features.length - 1; index >= 0; index -= 1) {
+      if (features[index].startMs <= range.endMs) {
+        endIndex = index;
+        break;
+      }
+    }
+
+    if (startIndex < 0 || endIndex < 0) return range;
+
+    while (startIndex > 0 && features[startIndex - 1].rms >= sustainFloor) {
+      startIndex -= 1;
+    }
+
+    while (endIndex < features.length - 1 && features[endIndex + 1].rms >= sustainFloor) {
+      endIndex += 1;
+    }
+
+    return {
+      startMs: Math.min(range.startMs, features[startIndex].startMs),
+      endMs: Math.max(range.endMs, features[endIndex].endMs),
+    };
+  });
 }
 
 function findOfflineOnsets(features, thresholds) {
-    const onsets = [];
-    let lastOnset = -Number.POSITIVE_INFINITY;
-    const smoothedFlux = smoothFeatureFlux(features);
-    const novelty = getNoveltyCurve(features);
+  const onsets = [];
+  let lastOnset = -Number.POSITIVE_INFINITY;
+  const smoothedFlux = smoothFeatureFlux(features);
+  const novelty = getNoveltyCurve(features);
 
-    for (let index = 1; index < features.length - 1; index += 1) {
-        const previous = features[index - 1];
-        const current = features[index];
-        const baseline = getLocalFluxBaseline(smoothedFlux, index);
-        const enoughGap = current.time - lastOnset >= OFFLINE_ONSET_MIN_GAP_MS;
-        const active = current.rms >= thresholds.activeRms;
-        const localFluxPeak = smoothedFlux[index] >= smoothedFlux[index - 1]
-            && smoothedFlux[index] >= smoothedFlux[index + 1];
-        const fluxOnset = localFluxPeak
-            && smoothedFlux[index] >= thresholds.flux
-            && smoothedFlux[index] >= baseline * 1.55;
-        const rmsRise = current.rms - previous.rms >= thresholds.activeRms * 0.45
-            && current.rms / Math.max(previous.rms, thresholds.noiseRms) >= 1.35;
-        const noveltyBaseline = median(novelty.slice(Math.max(0, index - 6), Math.min(novelty.length, index + 7)).map(item => item.value));
-        const noveltyPeak = novelty[index].value >= novelty[index - 1].value
-            && novelty[index].value >= novelty[index + 1].value
-            && novelty[index].value >= Math.max(0.34, noveltyBaseline * 1.45);
+  for (let index = 1; index < features.length - 1; index += 1) {
+    const previous = features[index - 1];
+    const current = features[index];
+    const baseline = getLocalFluxBaseline(smoothedFlux, index);
+    const enoughGap = current.time - lastOnset >= OFFLINE_ONSET_MIN_GAP_MS;
+    const active = current.rms >= thresholds.activeRms;
+    const localFluxPeak =
+      smoothedFlux[index] >= smoothedFlux[index - 1] &&
+      smoothedFlux[index] >= smoothedFlux[index + 1];
+    const fluxOnset =
+      localFluxPeak &&
+      smoothedFlux[index] >= thresholds.flux &&
+      smoothedFlux[index] >= baseline * 1.55;
+    const rmsRise =
+      current.rms - previous.rms >= thresholds.activeRms * 0.45 &&
+      current.rms / Math.max(previous.rms, thresholds.noiseRms) >= 1.35;
+    const noveltyBaseline = median(
+      novelty
+        .slice(Math.max(0, index - 6), Math.min(novelty.length, index + 7))
+        .map((item) => item.value)
+    );
+    const noveltyPeak =
+      novelty[index].value >= novelty[index - 1].value &&
+      novelty[index].value >= novelty[index + 1].value &&
+      novelty[index].value >= Math.max(0.34, noveltyBaseline * 1.45);
 
-        if (active && enoughGap && (fluxOnset || rmsRise || noveltyPeak)) {
-            let onsetIndex = index;
-            while (
-                onsetIndex > 0
-                && current.time - features[onsetIndex - 1].time < 90
-                && features[onsetIndex - 1].rms > thresholds.noiseRms * 1.25
-                && features[onsetIndex - 1].rms <= features[onsetIndex].rms * 1.12
-            ) {
-                onsetIndex -= 1;
-            }
+    if (active && enoughGap && (fluxOnset || rmsRise || noveltyPeak)) {
+      let onsetIndex = index;
+      while (
+        onsetIndex > 0 &&
+        current.time - features[onsetIndex - 1].time < 90 &&
+        features[onsetIndex - 1].rms > thresholds.noiseRms * 1.25 &&
+        features[onsetIndex - 1].rms <= features[onsetIndex].rms * 1.12
+      ) {
+        onsetIndex -= 1;
+      }
 
-            onsets.push(features[onsetIndex].startMs);
-            lastOnset = current.time;
-        }
+      onsets.push(features[onsetIndex].startMs);
+      lastOnset = current.time;
     }
+  }
 
-    return onsets;
+  return onsets;
 }
 
 function findEnergyValleySplits(range, features, thresholds) {
-    const inside = features.filter(frame => frame.time > range.startMs && frame.time < range.endMs);
-    if (inside.length < 5 || range.endMs - range.startMs < OFFLINE_PITCH_SPLIT_MIN_MS * 2) return [];
+  const inside = features.filter((frame) => frame.time > range.startMs && frame.time < range.endMs);
+  if (inside.length < 5 || range.endMs - range.startMs < OFFLINE_PITCH_SPLIT_MIN_MS * 2) return [];
 
-    const highRms = percentile(inside.map(frame => frame.rms), 0.85);
-    const splits = [];
-    let lastSplit = range.startMs;
-    const valleyThreshold = Math.max(thresholds.noiseRms * 2.2, thresholds.activeRms * 0.78, highRms * 0.38);
-    let valleyStart = -1;
+  const highRms = percentile(
+    inside.map((frame) => frame.rms),
+    0.85
+  );
+  const splits = [];
+  let lastSplit = range.startMs;
+  const valleyThreshold = Math.max(
+    thresholds.noiseRms * 2.2,
+    thresholds.activeRms * 0.78,
+    highRms * 0.38
+  );
+  let valleyStart = -1;
 
-    function closeValley(endIndex) {
-        if (valleyStart < 0) return;
+  function closeValley(endIndex) {
+    if (valleyStart < 0) return;
 
-        const startIndex = valleyStart;
-        const end = endIndex;
-        valleyStart = -1;
+    const startIndex = valleyStart;
+    const end = endIndex;
+    valleyStart = -1;
 
-        const startFrame = inside[startIndex];
-        const endFrame = inside[end];
-        const splitTime = (startFrame.time + endFrame.time) / 2;
-        const before = inside.slice(Math.max(0, startIndex - 5), startIndex);
-        const after = inside.slice(end + 1, Math.min(inside.length, end + 6));
-        const beforePeak = before.reduce((peak, frame) => Math.max(peak, frame.rms), 0);
-        const afterPeak = after.reduce((peak, frame) => Math.max(peak, frame.rms), 0);
-        const enoughBefore = splitTime - lastSplit >= OFFLINE_PITCH_SPLIT_MIN_MS * 0.78;
-        const enoughAfter = range.endMs - splitTime >= OFFLINE_PITCH_SPLIT_MIN_MS * 0.78;
-        const hasAttackAround = beforePeak >= Math.max(thresholds.activeRms * 1.1, highRms * 0.45)
-            && afterPeak >= Math.max(thresholds.activeRms * 1.1, highRms * 0.45);
+    const startFrame = inside[startIndex];
+    const endFrame = inside[end];
+    const splitTime = (startFrame.time + endFrame.time) / 2;
+    const before = inside.slice(Math.max(0, startIndex - 5), startIndex);
+    const after = inside.slice(end + 1, Math.min(inside.length, end + 6));
+    const beforePeak = before.reduce((peak, frame) => Math.max(peak, frame.rms), 0);
+    const afterPeak = after.reduce((peak, frame) => Math.max(peak, frame.rms), 0);
+    const enoughBefore = splitTime - lastSplit >= OFFLINE_PITCH_SPLIT_MIN_MS * 0.78;
+    const enoughAfter = range.endMs - splitTime >= OFFLINE_PITCH_SPLIT_MIN_MS * 0.78;
+    const hasAttackAround =
+      beforePeak >= Math.max(thresholds.activeRms * 1.1, highRms * 0.45) &&
+      afterPeak >= Math.max(thresholds.activeRms * 1.1, highRms * 0.45);
 
-        if (enoughBefore && enoughAfter && hasAttackAround) {
-            splits.push(splitTime);
-            lastSplit = splitTime;
-        }
+    if (enoughBefore && enoughAfter && hasAttackAround) {
+      splits.push(splitTime);
+      lastSplit = splitTime;
     }
+  }
 
-    for (let index = 0; index < inside.length; index += 1) {
-        const current = inside[index];
+  for (let index = 0; index < inside.length; index += 1) {
+    const current = inside[index];
 
-        if (current.rms <= valleyThreshold) {
-            if (valleyStart < 0) valleyStart = index;
-        } else if (valleyStart >= 0) {
-            closeValley(index - 1);
-        }
+    if (current.rms <= valleyThreshold) {
+      if (valleyStart < 0) valleyStart = index;
+    } else if (valleyStart >= 0) {
+      closeValley(index - 1);
     }
+  }
 
-    closeValley(inside.length - 1);
-    return splits;
+  closeValley(inside.length - 1);
+  return splits;
 }
 
 function getFeatureAtTime(features, timeMs) {
-    if (features.length === 0) return null;
-    let best = features[0];
-    let bestDistance = Math.abs(best.time - timeMs);
+  if (features.length === 0) return null;
+  let best = features[0];
+  let bestDistance = Math.abs(best.time - timeMs);
 
-    for (let index = 1; index < features.length; index += 1) {
-        const distance = Math.abs(features[index].time - timeMs);
-        if (distance < bestDistance) {
-            best = features[index];
-            bestDistance = distance;
-        }
+  for (let index = 1; index < features.length; index += 1) {
+    const distance = Math.abs(features[index].time - timeMs);
+    if (distance < bestDistance) {
+      best = features[index];
+      bestDistance = distance;
     }
+  }
 
-    return best;
+  return best;
 }
 
 function getFeaturePeakInWindow(features, startMs, endMs) {
-    return features.reduce((peak, frame) => {
-        if (frame.time < startMs || frame.time > endMs) return peak;
-        return Math.max(peak, frame.rms);
-    }, 0);
+  return features.reduce((peak, frame) => {
+    if (frame.time < startMs || frame.time > endMs) return peak;
+    return Math.max(peak, frame.rms);
+  }, 0);
 }
 
 function getFeatureMinimumInWindow(features, startMs, endMs) {
-    let minimum = Number.POSITIVE_INFINITY;
+  let minimum = Number.POSITIVE_INFINITY;
 
-    features.forEach(frame => {
-        if (frame.time < startMs || frame.time > endMs) return;
-        minimum = Math.min(minimum, frame.rms);
-    });
+  features.forEach((frame) => {
+    if (frame.time < startMs || frame.time > endMs) return;
+    minimum = Math.min(minimum, frame.rms);
+  });
 
-    return Number.isFinite(minimum) ? minimum : 0;
+  return Number.isFinite(minimum) ? minimum : 0;
 }
 
 function hasReattackBoundary(timeMs, features, thresholds, range = null) {
-    const safeStart = range?.startMs ?? 0;
-    const safeEnd = range?.endMs ?? Number.POSITIVE_INFINITY;
-    const beforeStart = Math.max(safeStart, timeMs - OFFLINE_BOUNDARY_PEAK_WINDOW_MS);
-    const beforeEnd = Math.max(safeStart, timeMs - OFFLINE_BOUNDARY_GUARD_MS);
-    const afterStart = Math.min(safeEnd, timeMs + OFFLINE_BOUNDARY_GUARD_MS);
-    const afterEnd = Math.min(safeEnd, timeMs + OFFLINE_BOUNDARY_PEAK_WINDOW_MS);
-    const valleyStart = Math.max(safeStart, timeMs - OFFLINE_BOUNDARY_GUARD_MS);
-    const valleyEnd = Math.min(safeEnd, timeMs + OFFLINE_BOUNDARY_GUARD_MS);
-    const beforePeak = getFeaturePeakInWindow(features, beforeStart, beforeEnd);
-    const afterPeak = getFeaturePeakInWindow(features, afterStart, afterEnd);
-    const valley = getFeatureMinimumInWindow(features, valleyStart, valleyEnd);
-    const peakFloor = Math.max(thresholds.activeRms * 1.18, thresholds.noiseRms * 3.2);
-    const hasEnergyOnBothSides = beforePeak >= peakFloor && afterPeak >= peakFloor;
-    const hasDeepValley = valley <= Math.min(beforePeak, afterPeak) * OFFLINE_BOUNDARY_DROP_RATIO
-        || valley <= thresholds.activeRms * 0.82;
+  const safeStart = range?.startMs ?? 0;
+  const safeEnd = range?.endMs ?? Number.POSITIVE_INFINITY;
+  const beforeStart = Math.max(safeStart, timeMs - OFFLINE_BOUNDARY_PEAK_WINDOW_MS);
+  const beforeEnd = Math.max(safeStart, timeMs - OFFLINE_BOUNDARY_GUARD_MS);
+  const afterStart = Math.min(safeEnd, timeMs + OFFLINE_BOUNDARY_GUARD_MS);
+  const afterEnd = Math.min(safeEnd, timeMs + OFFLINE_BOUNDARY_PEAK_WINDOW_MS);
+  const valleyStart = Math.max(safeStart, timeMs - OFFLINE_BOUNDARY_GUARD_MS);
+  const valleyEnd = Math.min(safeEnd, timeMs + OFFLINE_BOUNDARY_GUARD_MS);
+  const beforePeak = getFeaturePeakInWindow(features, beforeStart, beforeEnd);
+  const afterPeak = getFeaturePeakInWindow(features, afterStart, afterEnd);
+  const valley = getFeatureMinimumInWindow(features, valleyStart, valleyEnd);
+  const peakFloor = Math.max(thresholds.activeRms * 1.18, thresholds.noiseRms * 3.2);
+  const weakSideFloor = Math.max(thresholds.activeRms * 0.72, thresholds.noiseRms * 1.25);
+  const strongSideFloor = Math.max(thresholds.activeRms * 1.18, thresholds.noiseRms * 2.4);
+  const hasBalancedEnergy = beforePeak >= peakFloor && afterPeak >= peakFloor;
+  const hasAsymmetricEnergy =
+    Math.min(beforePeak, afterPeak) >= weakSideFloor &&
+    Math.max(beforePeak, afterPeak) >= strongSideFloor;
+  const hasEnergyOnBothSides = hasBalancedEnergy || hasAsymmetricEnergy;
+  const hasDeepValley =
+    valley <= Math.min(beforePeak, afterPeak) * OFFLINE_BOUNDARY_DROP_RATIO ||
+    valley <= thresholds.activeRms * 0.82;
 
-    return hasEnergyOnBothSides && hasDeepValley;
+  return hasEnergyOnBothSides && hasDeepValley;
 }
 
 function backtrackBoundaryToEnergyMinimum(timeMs, features, range) {
-    const windowStart = Math.max(range.startMs, timeMs - 120);
-    const windowEnd = Math.min(range.endMs, timeMs + 24);
-    const candidates = features.filter(frame => frame.time >= windowStart && frame.time <= windowEnd);
-    if (candidates.length === 0) return timeMs;
+  const windowStart = Math.max(range.startMs, timeMs - 120);
+  const windowEnd = Math.min(range.endMs, timeMs + 24);
+  const candidates = features.filter(
+    (frame) => frame.time >= windowStart && frame.time <= windowEnd
+  );
+  if (candidates.length === 0) return timeMs;
 
-    let best = candidates[0];
-    for (let index = 1; index < candidates.length; index += 1) {
-        const frame = candidates[index];
-        if (frame.rms < best.rms || (frame.rms === best.rms && frame.time < best.time)) {
-            best = frame;
-        }
+  let best = candidates[0];
+  for (let index = 1; index < candidates.length; index += 1) {
+    const frame = candidates[index];
+    if (frame.rms < best.rms || (frame.rms === best.rms && frame.time < best.time)) {
+      best = frame;
     }
+  }
 
-    return clamp(best.time, range.startMs, range.endMs);
+  return clamp(best.time, range.startMs, range.endMs);
 }
 
 function normalizeBoundaryPoints(points, range) {
-    return [...points]
-        .sort((a, b) => a - b)
-        .reduce((result, point) => {
-            const clamped = clamp(point, range.startMs, range.endMs);
-            const previous = result[result.length - 1];
-            if (previous === undefined || clamped - previous >= OFFLINE_ONSET_MIN_GAP_MS * 0.55) {
-                result.push(clamped);
-            }
-            return result;
-        }, []);
-}
-
-function refineSegmentsByEnergy(segments, features, thresholds) {
-    const refined = [];
-
-    segments.forEach(segment => {
-        let trimmed = { ...segment };
-        const inside = features.filter(frame => frame.time >= segment.startMs && frame.time <= segment.endMs);
-        const activeInside = inside.filter(frame => frame.rms >= thresholds.activeRms * 0.75);
-        if (activeInside.length > 0) {
-            trimmed = {
-                startMs: Math.max(segment.startMs, activeInside[0].startMs),
-                endMs: Math.min(segment.endMs, activeInside[activeInside.length - 1].endMs),
-            };
-        }
-
-        segment = trimmed;
-        const duration = segment.endMs - segment.startMs;
-        const startFeature = getFeatureAtTime(features, segment.startMs);
-        const middleFeature = getFeatureAtTime(features, (segment.startMs + segment.endMs) / 2);
-        const segmentRms = middleFeature?.rms || startFeature?.rms || 0;
-        const tooShort = duration < OFFLINE_MIN_SEGMENT_MS;
-        const weakTail = refined.length > 0
-            && duration < OFFLINE_MIN_SEGMENT_MS * 1.7
-            && segmentRms < thresholds.activeRms * 1.45;
-
-        if (tooShort || weakTail) {
-            const previous = refined[refined.length - 1];
-            if (previous) previous.endMs = Math.max(previous.endMs, segment.endMs);
-            return;
-        }
-
-        refined.push({ ...segment });
-    });
-
-    return refined;
-}
-
-function createOfflineSegments(features, durationMs) {
-    if (features.length === 0) {
-        return {
-            segments: [],
-            thresholds: { activeRms: 0, noiseRms: 0, flux: 0 },
-            ranges: [],
-            onsets: [],
-        };
-    }
-
-    const thresholds = getOfflineThresholds(features);
-    const ranges = getActiveRanges(features, thresholds);
-    const onsets = findOfflineOnsets(features, thresholds);
-    const segments = [];
-
-    ranges.forEach(range => {
-        const points = [range.startMs];
-        onsets.forEach(onset => {
-            const farFromStart = onset - range.startMs > OFFLINE_ONSET_MIN_GAP_MS * 0.5;
-            const hasRoomAfter = range.endMs - onset > OFFLINE_MIN_SEGMENT_MS * 0.5;
-            const farFromPrevious = onset - points[points.length - 1] >= OFFLINE_ONSET_MIN_GAP_MS;
-            if (onset > range.startMs && onset < range.endMs && farFromStart && hasRoomAfter && farFromPrevious) {
-                const boundary = backtrackBoundaryToEnergyMinimum(onset, features, range);
-                if (hasReattackBoundary(boundary, features, thresholds, range)) {
-                    points.push(boundary);
-                }
-            }
-        });
-        points.push(...findEnergyValleySplits(range, features, thresholds));
-        const boundaries = normalizeBoundaryPoints([...points, range.endMs], range);
-
-        boundaries.slice(0, -1).forEach((startMs, index) => {
-            const endMs = boundaries[index + 1];
-            if (endMs - startMs >= OFFLINE_MIN_SEGMENT_MS) {
-                segments.push({
-                    startMs: clamp(startMs, 0, durationMs),
-                    endMs: clamp(endMs, 0, durationMs),
-                });
-            }
-        });
-    });
-
-    return { segments: refineSegmentsByEnergy(segments, features, thresholds), thresholds, ranges, onsets };
-}
-
-function periodicityAtFrequency(buffer, sampleRate, frequency) {
-    const lag = Math.round(sampleRate / frequency);
-    if (lag < 1 || lag >= buffer.length - 1) return 0;
-
-    let mean = 0;
-    for (let index = 0; index < buffer.length; index += 1) {
-        mean += buffer[index];
-    }
-    mean /= buffer.length;
-
-    let correlation = 0;
-    let energyA = 0;
-    let energyB = 0;
-    for (let index = 0; index < buffer.length - lag; index += 1) {
-        const current = buffer[index] - mean;
-        const delayed = buffer[index + lag] - mean;
-        correlation += current * delayed;
-        energyA += current * current;
-        energyB += delayed * delayed;
-    }
-
-    if (energyA <= 0 || energyB <= 0) return 0;
-    return correlation / Math.sqrt(energyA * energyB);
-}
-
-function spectralMagnitudeAtFrequency(buffer, sampleRate, frequency) {
-    const windowValues = getHannWindow(buffer.length);
-    let real = 0;
-    let imag = 0;
-    let weight = 0;
-
-    for (let index = 0; index < buffer.length; index += 1) {
-        const phase = (-2 * Math.PI * frequency * index) / sampleRate;
-        const sample = buffer[index] * windowValues[index];
-        real += sample * Math.cos(phase);
-        imag += sample * Math.sin(phase);
-        weight += windowValues[index];
-    }
-
-    return Math.hypot(real, imag) / Math.max(1, weight);
-}
-
-function buildSegmentPitchBuffer(samples, sampleRate, segment, attackSkipMs = OFFLINE_ATTACK_SKIP_MS) {
-    const durationMs = segment.endMs - segment.startMs;
-    const skippedMs = Math.min(attackSkipMs, durationMs * 0.28);
-    const startSample = Math.floor(((segment.startMs + skippedMs) / 1000) * sampleRate);
-    const endSample = Math.floor((segment.endMs / 1000) * sampleRate);
-    const length = Math.max(0, endSample - startSample);
-    if (length < sampleRate * 0.06) return null;
-
-    const maxLength = Math.min(length, Math.round(sampleRate * 0.55));
-    const offset = Math.max(0, Math.floor((length - maxLength) / 2));
-    return samples.slice(startSample + offset, startSample + offset + maxLength);
-}
-
-function getMagnitudeFromSpectrum(magnitudes, sampleRate, fftSize, frequency) {
-    if (frequency <= 0 || frequency >= sampleRate / 2) return 0;
-
-    const exactBin = (frequency / sampleRate) * fftSize;
-    const centerBin = Math.round(exactBin);
-    let best = 0;
-
-    for (let bin = centerBin - 1; bin <= centerBin + 1; bin += 1) {
-        if (bin >= 0 && bin < magnitudes.length) best = Math.max(best, magnitudes[bin]);
-    }
-
-    return best;
-}
-
-function computeLinearSpectrum(buffer, sampleRate) {
-    const fftSize = nextPowerOfTwo(Math.max(2048, buffer.length));
-    const real = new Float32Array(fftSize);
-    const imag = new Float32Array(fftSize);
-    const windowValues = getHannWindow(buffer.length);
-    const maxBin = Math.floor(fftSize / 2);
-
-    for (let index = 0; index < buffer.length; index += 1) {
-        real[index] = buffer[index] * windowValues[index];
-    }
-
-    runFft(real, imag);
-
-    const magnitudes = new Float32Array(maxBin + 1);
-    let peak = 0;
-    for (let bin = 0; bin <= maxBin; bin += 1) {
-        const frequency = (bin / fftSize) * sampleRate;
-        if (frequency < MIN_FREQ || frequency > OFFLINE_SPECTRUM_MAX_FREQ) continue;
-        const magnitude = Math.hypot(real[bin], imag[bin]);
-        magnitudes[bin] = magnitude;
-        peak = Math.max(peak, magnitude);
-    }
-
-    return { magnitudes, fftSize, peak };
-}
-
-function scoreMidiCandidate(magnitudes, sampleRate, fftSize, peak, midi) {
-    const frequency = midiToFrequency(midi);
-    if (frequency < MIN_FREQ || frequency > MAX_FREQ) return 0;
-
-    let harmonicScore = 0;
-    let harmonicWeight = 0;
-    for (let harmonic = 1; harmonic <= 6; harmonic += 1) {
-        const harmonicFrequency = frequency * harmonic;
-        if (harmonicFrequency > Math.min(OFFLINE_SPECTRUM_MAX_FREQ, sampleRate / 2)) break;
-
-        const weight = 1 / Math.sqrt(harmonic);
-        harmonicScore += getMagnitudeFromSpectrum(magnitudes, sampleRate, fftSize, harmonicFrequency) * weight;
-        harmonicWeight += weight;
-    }
-
-    if (harmonicWeight <= 0 || peak <= 0) return 0;
-
-    const normalizedHarmonics = harmonicScore / harmonicWeight / peak;
-    const fundamental = getMagnitudeFromSpectrum(magnitudes, sampleRate, fftSize, frequency) / peak;
-    const subHarmonic = getMagnitudeFromSpectrum(magnitudes, sampleRate, fftSize, frequency / 2) / peak;
-    const octavePenalty = subHarmonic > fundamental * 1.25 ? 0.72 : 1;
-
-    return normalizedHarmonics * (0.55 + fundamental * 0.45) * octavePenalty;
-}
-
-function scoreHpsMidiCandidate(magnitudes, sampleRate, fftSize, peak, midi) {
-    const frequency = midiToFrequency(midi);
-    if (frequency < MIN_FREQ || frequency > MAX_FREQ || peak <= 0) return 0;
-
-    let score = 1;
-    let factors = 0;
-    for (let harmonic = 1; harmonic <= 4; harmonic += 1) {
-        const magnitude = getMagnitudeFromSpectrum(magnitudes, sampleRate, fftSize, frequency * harmonic) / peak;
-        score *= Math.max(0.015, magnitude);
-        factors += 1;
-    }
-
-    return factors > 0 ? Math.pow(score, 1 / factors) : 0;
-}
-
-function detectSpectralPitch(buffer, sampleRate, hintMidi = null) {
-    if (!buffer || buffer.length < sampleRate * 0.06) return null;
-
-    const { magnitudes, fftSize, peak } = computeLinearSpectrum(buffer, sampleRate);
-    if (peak <= 0) return null;
-
-    const candidates = [];
-    const minMidi = 21;
-    const maxMidi = 96;
-    for (let midi = minMidi; midi <= maxMidi; midi += 1) {
-        const harmonicScore = scoreMidiCandidate(magnitudes, sampleRate, fftSize, peak, midi);
-        const hpsScore = scoreHpsMidiCandidate(magnitudes, sampleRate, fftSize, peak, midi);
-        let score = harmonicScore * 0.68 + hpsScore * 0.32;
-        if (hintMidi !== null) {
-            const distance = Math.abs(midi - hintMidi);
-            if (distance <= 1) score *= 1.18;
-            else if (distance <= 2) score *= 1.06;
-        }
-        candidates.push({ midi, score });
-    }
-
-    candidates.sort((a, b) => b.score - a.score);
-    const best = candidates[0];
-    const second = candidates.find(candidate => candidate.midi !== best.midi) || { score: 0 };
-    if (!best || best.score < 0.035 || best.score < second.score * 1.08) return null;
-
-    const frequency = midiToFrequency(best.midi);
-    return {
-        note: midiToNote(best.midi),
-        midi: best.midi,
-        pitchClass: ((best.midi % 12) + 12) % 12,
-        frequency,
-        cents: 0,
-        confidence: clamp(best.score / Math.max(0.001, second.score), 0, 2) / 2,
-        score: best.score,
-    };
-}
-
-function mergePitchEstimates(yinNote, spectralNote) {
-    if (!spectralNote) return yinNote;
-    if (!yinNote) return spectralNote;
-
-    const distance = Math.abs(yinNote.midi - spectralNote.midi);
-    if (distance === 0) {
-        return {
-            ...yinNote,
-            confidence: Math.max(yinNote.confidence || 0, spectralNote.confidence || 0),
-        };
-    }
-
-    if (distance === 12 && (spectralNote.score || 0) >= 0.05) {
-        return spectralNote;
-    }
-
-    if ((spectralNote.score || 0) >= 0.09 && (spectralNote.confidence || 0) >= 0.56) {
-        return spectralNote;
-    }
-
-    return yinNote;
-}
-
-function correctLowOctaveNoteFromSpectrum(note, buffer, sampleRate) {
-    if (!note || note.midi >= 48 || !buffer?.length) return note;
-
-    const { magnitudes, fftSize, peak } = computeLinearSpectrum(buffer, sampleRate);
-    if (peak <= 0) return note;
-
-    const currentScore = scoreMidiCandidate(magnitudes, sampleRate, fftSize, peak, note.midi)
-        + scoreHpsMidiCandidate(magnitudes, sampleRate, fftSize, peak, note.midi) * 0.6;
-    let bestMidi = note.midi;
-    let bestScore = currentScore;
-
-    for (let midi = note.pitchClass; midi <= 84; midi += 12) {
-        if (midi < 48) continue;
-        const score = scoreMidiCandidate(magnitudes, sampleRate, fftSize, peak, midi)
-            + scoreHpsMidiCandidate(magnitudes, sampleRate, fftSize, peak, midi) * 0.6;
-
-        if (score > bestScore) {
-            bestMidi = midi;
-            bestScore = score;
-        }
-    }
-
-    if (bestMidi === note.midi || bestScore < Math.max(0.028, currentScore * 0.82)) return note;
-
-    return {
-        ...note,
-        note: midiToNote(bestMidi),
-        midi: bestMidi,
-        pitchClass: ((bestMidi % 12) + 12) % 12,
-        frequency: midiToFrequency(bestMidi),
-        cents: 0,
-        confidence: Math.max(note.confidence || 0, clamp(bestScore / Math.max(0.001, currentScore), 0, 1)),
-        score: bestScore,
-    };
-}
-
-function correctOctaveFrequency(buffer, sampleRate, frequency) {
-    const lowerFrequency = frequency / 2;
-    const midi = frequencyToMidi(frequency);
-
-    if (midi < 48) {
-        const currentMagnitude = spectralMagnitudeAtFrequency(buffer, sampleRate, frequency);
-        const currentScore = periodicityAtFrequency(buffer, sampleRate, frequency);
-        let bestFrequency = frequency;
-        let bestScore = currentMagnitude * Math.max(0.18, currentScore);
-
-        for (let multiplier = 2; frequency * multiplier <= MAX_FREQ; multiplier *= 2) {
-            const candidate = frequency * multiplier;
-            const candidateMidi = frequencyToMidi(candidate);
-            if (candidateMidi > 84) break;
-
-            const magnitude = spectralMagnitudeAtFrequency(buffer, sampleRate, candidate);
-            const periodicity = periodicityAtFrequency(buffer, sampleRate, candidate);
-            const score = magnitude * Math.max(0.18, periodicity);
-            const strongOctaveSupport = magnitude >= currentMagnitude * 1.15 || score >= bestScore * 1.24;
-
-            if (strongOctaveSupport && periodicity >= 0.24 && score > bestScore) {
-                bestFrequency = candidate;
-                bestScore = score;
-            }
-        }
-
-        if (bestFrequency !== frequency) return bestFrequency;
-    }
-
-    if (lowerFrequency < MIN_FREQ) return frequency;
-
-    const currentScore = periodicityAtFrequency(buffer, sampleRate, frequency);
-    const lowerScore = periodicityAtFrequency(buffer, sampleRate, lowerFrequency);
-    const currentMagnitude = spectralMagnitudeAtFrequency(buffer, sampleRate, frequency);
-    const lowerMagnitude = spectralMagnitudeAtFrequency(buffer, sampleRate, lowerFrequency);
-    const lowerHasSpectralSupport = lowerMagnitude >= currentMagnitude * (midi >= 72 ? 0.22 : 0.32);
-    const requiredRatio = midi >= 72 ? 0.84 : 0.95;
-
-    if (lowerHasSpectralSupport && lowerScore > 0.52 && lowerScore >= currentScore * requiredRatio) {
-        return lowerFrequency;
-    }
-
-    return frequency;
-}
-
-function clonePitchFrameWithMidi(frame, midi) {
-    const frequency = midiToFrequency(midi);
-    return {
-        ...frame,
-        midi,
-        note: midiToNote(midi),
-        pitchClass: ((midi % 12) + 12) % 12,
-        frequency,
-        cents: 0,
-    };
-}
-
-function stabilizePitchFrames(frames) {
-    if (frames.length < 3) return frames;
-
-    const stabilized = frames.map(frame => ({ ...frame }));
-    for (let index = 1; index < stabilized.length - 1; index += 1) {
-        const previous = stabilized[index - 1];
-        const current = stabilized[index];
-        const next = stabilized[index + 1];
-        const isIsolatedSpike = previous.midi === next.midi && current.midi !== previous.midi;
-        const isOctaveSpike = previous.pitchClass === current.pitchClass
-            && next.pitchClass === current.pitchClass
-            && Math.abs(current.midi - previous.midi) >= 12
-            && Math.abs(current.midi - next.midi) >= 12;
-
-        if (isIsolatedSpike || isOctaveSpike) {
-            stabilized[index] = clonePitchFrameWithMidi(current, previous.midi);
-        }
-    }
-
-    return stabilized;
-}
-
-function summarizePitchFrames(frames) {
-    if (frames.length < PITCH_SUMMARY_MIN_FRAMES) return null;
-
-    const midiWeights = new Map();
-    const midiFrames = new Map();
-    let totalWeight = 0;
-
-    frames.forEach(frame => {
-        const weight = Math.max(0.1, frame.confidence) * clamp(frame.rms / 0.035, 0.4, 1.6);
-        totalWeight += weight;
-        midiWeights.set(frame.midi, (midiWeights.get(frame.midi) || 0) + weight);
-        if (!midiFrames.has(frame.midi)) midiFrames.set(frame.midi, []);
-        midiFrames.get(frame.midi).push(frame);
-    });
-
-    let bestMidi = null;
-    let bestWeight = 0;
-    midiWeights.forEach((weight, midi) => {
-        if (weight > bestWeight) {
-            bestMidi = midi;
-            bestWeight = weight;
-        }
-    });
-
-    if (bestMidi === null || bestWeight / totalWeight < 0.42) return null;
-
-    const framesForMidi = midiFrames.get(bestMidi);
-    const medianFrequency = median(framesForMidi.map(frame => frame.frequency));
-    const medianCents = median(framesForMidi.map(frame => frame.cents));
-    const medianConfidence = median(framesForMidi.map(frame => frame.confidence || 0));
-
-    return {
-        note: midiToNote(bestMidi),
-        midi: bestMidi,
-        pitchClass: ((bestMidi % 12) + 12) % 12,
-        frequency: medianFrequency,
-        cents: medianCents,
-        confidence: clamp((bestWeight / totalWeight) * medianConfidence, 0, 1),
-    };
-}
-
-function analyzeOfflineSegment(samples, sampleRate, segment) {
-    const durationMs = segment.endMs - segment.startMs;
-    if (durationMs < OFFLINE_MIN_SEGMENT_MS) return null;
-
-    const attackSkipMs = Math.min(OFFLINE_ATTACK_SKIP_MS, durationMs * 0.28);
-    const startSample = Math.floor(((segment.startMs + attackSkipMs) / 1000) * sampleRate);
-    const endSample = Math.floor((segment.endMs / 1000) * sampleRate);
-    const segmentRms = calculateRmsRange(samples, startSample, endSample);
-    const pitchThreshold = Math.max(0.0015, segmentRms * 0.12, getRmsThreshold() * 0.25);
-    const hopSize = Math.max(256, Math.round(sampleRate * 0.025));
-    const pitchBuffer = new Float32Array(BUFFER_SIZE);
-    const frames = [];
-
-    for (let start = startSample; start < endSample; start += hopSize) {
-        const available = Math.min(BUFFER_SIZE, endSample - start);
-        if (available < BUFFER_SIZE * 0.25 && frames.length > 0) break;
-
-        pitchBuffer.fill(0);
-        pitchBuffer.set(samples.subarray(start, Math.min(start + BUFFER_SIZE, endSample)));
-        const result = detectPitch(pitchBuffer, sampleRate, pitchThreshold);
-        if (!result.frequency) continue;
-
-        const correctedFrequency = correctOctaveFrequency(pitchBuffer, sampleRate, result.frequency);
-        const noteInfo = frequencyToNote(correctedFrequency);
-        frames.push({
-            time: (start / sampleRate) * 1000,
-            note: noteInfo.note,
-            midi: noteInfo.midi,
-            pitchClass: noteInfo.pitchClass,
-            frequency: correctedFrequency,
-            cents: noteInfo.cents,
-            confidence: result.confidence,
-            rms: result.rms,
-        });
-    }
-
-    const yinNote = summarizePitchFrames(stabilizePitchFrames(frames));
-    const segmentBuffer = buildSegmentPitchBuffer(samples, sampleRate, segment, OFFLINE_ATTACK_SKIP_MS);
-    const spectralNote = detectSpectralPitch(segmentBuffer, sampleRate, yinNote?.midi ?? null);
-
-    return correctLowOctaveNoteFromSpectrum(
-        mergePitchEstimates(yinNote, spectralNote),
-        segmentBuffer,
-        sampleRate,
-    );
-}
-
-function getSegmentPitchTrace(samples, sampleRate, segment) {
-    const startSample = Math.floor((segment.startMs / 1000) * sampleRate);
-    const endSample = Math.floor((segment.endMs / 1000) * sampleRate);
-    const segmentRms = calculateRmsRange(samples, startSample, endSample);
-    const pitchThreshold = Math.max(0.0015, segmentRms * 0.14, getRmsThreshold() * 0.25);
-    const hopSize = Math.max(256, Math.round(sampleRate * 0.035));
-    const pitchBuffer = new Float32Array(BUFFER_SIZE);
-    const trace = [];
-
-    for (let start = startSample; start < endSample; start += hopSize) {
-        const available = Math.min(BUFFER_SIZE, endSample - start);
-        if (available < BUFFER_SIZE * 0.35 && trace.length > 0) break;
-
-        pitchBuffer.fill(0);
-        pitchBuffer.set(samples.subarray(start, Math.min(start + BUFFER_SIZE, endSample)));
-        const result = detectPitch(pitchBuffer, sampleRate, pitchThreshold);
-        if (!result.frequency) continue;
-
-        const frequency = correctOctaveFrequency(pitchBuffer, sampleRate, result.frequency);
-        trace.push({
-            timeMs: (start / sampleRate) * 1000,
-            midi: frequencyToMidi(frequency),
-            confidence: result.confidence,
-            rms: result.rms,
-        });
-    }
-
-    return trace;
-}
-
-function findPitchSplitPoints(samples, sampleRate, segment) {
-    if (segment.endMs - segment.startMs < OFFLINE_PITCH_SPLIT_MIN_MS * 2) return [];
-
-    const trace = getSegmentPitchTrace(samples, sampleRate, segment)
-        .filter(item => item.confidence >= MIN_PITCH_CONFIDENCE);
-    if (trace.length < 5) return [];
-
-    const splits = [];
-    let anchorMidi = trace[0].midi;
-    let pending = [];
-
-    for (let index = 1; index < trace.length; index += 1) {
-        const item = trace[index];
-
-        if (Math.abs(item.midi - anchorMidi) <= 0) {
-            pending = [];
-            continue;
-        }
-
-        if (pending.length > 0 && item.midi !== pending[0].midi) {
-            pending = [];
-        }
-
-        pending.push(item);
-        const pendingDuration = pending[pending.length - 1].timeMs - pending[0].timeMs;
-        const enoughBefore = pending[0].timeMs - segment.startMs >= OFFLINE_PITCH_SPLIT_MIN_MS;
-        const enoughAfter = segment.endMs - pending[0].timeMs >= OFFLINE_PITCH_SPLIT_MIN_MS;
-
-        if (pending.length >= 3 && pendingDuration >= 70 && enoughBefore && enoughAfter) {
-            splits.push(pending[0].timeMs);
-            anchorMidi = pending[0].midi;
-            pending = [];
-        }
-    }
-
-    return splits;
-}
-
-function findReattackSplitPoints(features, segment, thresholds = null) {
-    const inside = features.filter(frame => frame.time > segment.startMs && frame.time < segment.endMs);
-    if (inside.length < 6 || segment.endMs - segment.startMs < OFFLINE_PITCH_SPLIT_MIN_MS * 2) return [];
-
-    const highRms = percentile(inside.map(frame => frame.rms), 0.86);
-    const splits = [];
-    let lastSplit = segment.startMs;
-
-    for (let index = 2; index < inside.length - 2; index += 1) {
-        const current = inside[index];
-        const previousHigh = Math.max(inside[index - 1].rms, inside[index - 2].rms);
-        const nextHigh = Math.max(inside[index + 1].rms, inside[index + 2].rms);
-        const valley = current.rms < highRms * 0.45
-            && current.rms < previousHigh * 0.62
-            && current.rms < nextHigh * 0.62;
-        const enoughBefore = current.time - lastSplit >= OFFLINE_PITCH_SPLIT_MIN_MS;
-        const enoughAfter = segment.endMs - current.time >= OFFLINE_PITCH_SPLIT_MIN_MS;
-
-        const reattackSupported = !thresholds
-            || hasReattackBoundary(current.time, features, thresholds, segment);
-
-        if (valley && enoughBefore && enoughAfter && reattackSupported) {
-            splits.push(current.time);
-            lastSplit = current.time;
-        }
-    }
-
-    return splits;
-}
-
-function splitSegmentsByPitch(samples, sampleRate, segments, features = [], thresholds = null) {
-    const refined = [];
-
-    segments.forEach(segment => {
-        const splitPoints = normalizeBoundaryPoints([
-            segment.startMs,
-            ...findPitchSplitPoints(samples, sampleRate, segment),
-            ...findReattackSplitPoints(features, segment, thresholds),
-            segment.endMs,
-        ], segment).slice(1, -1);
-        if (splitPoints.length === 0) {
-            refined.push(segment);
-            return;
-        }
-
-        const boundaries = [segment.startMs, ...splitPoints, segment.endMs];
-        boundaries.slice(0, -1).forEach((startMs, index) => {
-            const endMs = boundaries[index + 1];
-            if (endMs - startMs >= OFFLINE_MIN_SEGMENT_MS) {
-                refined.push({ startMs, endMs });
-            }
-        });
-    });
-
-    return refined;
-}
-
-function analyzePcmRecording(rawSamples, sampleRate) {
-    const normalized = normalizeSamples(preprocessSamples(rawSamples, sampleRate));
-    const durationMs = (normalized.samples.length / sampleRate) * 1000;
-    const features = createOfflineFeatureFrames(normalized.samples, sampleRate);
-    const segmentation = createOfflineSegments(features, durationMs);
-    const segments = refineSegmentsByEnergy(
-        splitSegmentsByPitch(
-            normalized.samples,
-            sampleRate,
-            segmentation.segments,
-            features,
-            segmentation.thresholds,
-        ),
-        features,
-        segmentation.thresholds,
-    );
-    const notes = segments
-        .map(segment => {
-            const note = analyzeOfflineSegment(normalized.samples, sampleRate, segment);
-            return note
-                ? {
-                    ...note,
-                    startMs: segment.startMs,
-                    endMs: segment.endMs,
-                    segmentRms: calculateRmsRange(
-                        normalized.samples,
-                        (segment.startMs / 1000) * sampleRate,
-                        (segment.endMs / 1000) * sampleRate,
-                    ),
-                }
-                : null;
-        })
-        .filter(Boolean);
-
-    const result = {
-        ...normalized,
-        durationMs,
-        features,
-        notes: cleanupRecognizedNotes(dedupeRecognizedNotes(notes, features, segmentation.thresholds)),
-        ...segmentation,
-        segments,
-    };
-
-    window.__soundToScaleLastAnalysis = {
-        durationMs,
-        peak: result.peak,
-        normalizationPeak: result.normalizationPeak,
-        rawRms: result.rawRms,
-        gain: result.gain,
-        thresholds: segmentation.thresholds,
-        ranges: segmentation.ranges,
-        segments,
-        notes: result.notes.map(note => note.note),
-        featureRms: {
-            min: percentile(features.map(frame => frame.rms), 0),
-            median: percentile(features.map(frame => frame.rms), 0.5),
-            p9: percentile(features.map(frame => frame.rms), 0.9),
-            max: Math.max(0, ...features.map(frame => frame.rms)),
-        },
-    };
-
-    return result;
-}
-
-function dedupeRecognizedNotes(notes, features = [], thresholds = null) {
-    return notes.reduce((result, note) => {
-        const previous = result[result.length - 1];
-        if (!previous) {
-            result.push(note);
-            return result;
-        }
-
-        const duration = (note.endMs ?? 0) - (note.startMs ?? 0);
-        const sameMidi = note.midi === previous.midi;
-        const boundaryTime = ((previous.endMs ?? 0) + (note.startMs ?? 0)) / 2;
-        const hasBoundaryReattack = thresholds
-            ? hasReattackBoundary(boundaryTime, features, thresholds, {
-                startMs: previous.startMs ?? boundaryTime - OFFLINE_BOUNDARY_PEAK_WINDOW_MS,
-                endMs: note.endMs ?? boundaryTime + OFFLINE_BOUNDARY_PEAK_WINDOW_MS,
-            })
-            : false;
-        const shortTail = duration > 0 && duration < OFFLINE_MIN_SEGMENT_MS * 1.4;
-        const weakTail = previous.segmentRms
-            && note.segmentRms
-            && note.segmentRms < previous.segmentRms * 0.32
-            && duration < OFFLINE_MIN_SEGMENT_MS * 1.7;
-        const tinyFragment = duration > 0 && duration < OFFLINE_MIN_SEGMENT_MS * 0.72;
-        const sameMidiTail = sameMidi
-            && previous.segmentRms
-            && note.segmentRms
-            && note.segmentRms < previous.segmentRms * 0.5
-            && shortTail;
-
-        if (weakTail) {
-            previous.endMs = Math.max(previous.endMs ?? 0, note.endMs ?? 0);
-            return result;
-        }
-
-        if (sameMidi && !hasBoundaryReattack) {
-            previous.endMs = Math.max(previous.endMs ?? 0, note.endMs ?? 0);
-            previous.confidence = Math.max(previous.confidence || 0, note.confidence || 0);
-            previous.segmentRms = Math.max(previous.segmentRms || 0, note.segmentRms || 0);
-            return result;
-        }
-
-        if (sameMidi && (tinyFragment || sameMidiTail)) {
-            previous.endMs = Math.max(previous.endMs ?? 0, note.endMs ?? 0);
-            previous.confidence = Math.max(previous.confidence || 0, note.confidence || 0);
-            return result;
-        }
-
-        result.push(note);
-        return result;
+  return [...points]
+    .sort((a, b) => a - b)
+    .reduce((result, point) => {
+      const clamped = clamp(point, range.startMs, range.endMs);
+      const previous = result[result.length - 1];
+      if (previous === undefined || clamped - previous >= OFFLINE_ONSET_MIN_GAP_MS * 0.55) {
+        result.push(clamped);
+      }
+      return result;
     }, []);
 }
 
-function cleanupRecognizedNotes(notes) {
-    const octaveCorrected = notes.map((note, index) => {
-        const previous = notes[index - 1];
-        const next = notes[index + 1];
-        if (!previous || !next || note.midi >= 48 || previous.midi < 48 || next.midi < 48) return note;
-        if (Math.abs(previous.midi - next.midi) > 12) return note;
+function refineSegmentsByEnergy(segments, features, thresholds) {
+  const refined = [];
 
-        const target = (previous.midi + next.midi) / 2;
-        let bestMidi = note.midi;
-        let bestDistance = Number.POSITIVE_INFINITY;
-
-        for (let midi = note.pitchClass; midi <= 84; midi += 12) {
-            if (midi < 48) continue;
-            const distance = Math.abs(midi - target);
-            if (distance < bestDistance) {
-                bestMidi = midi;
-                bestDistance = distance;
-            }
-        }
-
-        if (bestMidi === note.midi || bestDistance > 7) return note;
-
-        return {
-            ...note,
-            note: midiToNote(bestMidi),
-            midi: bestMidi,
-            pitchClass: ((bestMidi % 12) + 12) % 12,
-            frequency: midiToFrequency(bestMidi),
-            cents: 0,
-        };
-    });
-
-    const cleaned = octaveCorrected.filter(note => {
-        const confidence = note.confidence ?? 0;
-        if (confidence > 0 && confidence < 0.42) return false;
-        if (note.midi < 36 && confidence < 0.82) return false;
-        if (note.midi > 96 && confidence < 0.82) return false;
-        return true;
-    });
-
-    while (
-        cleaned.length > 1
-        && (cleaned[0].startMs ?? 0) < 1200
-        && Math.abs(cleaned[0].midi - cleaned[1].midi) >= 18
-        && (cleaned[0].confidence ?? 0) < 0.88
-    ) {
-        cleaned.shift();
+  segments.forEach((segment) => {
+    let trimmed = { ...segment };
+    const inside = features.filter(
+      (frame) => frame.time >= segment.startMs && frame.time <= segment.endMs
+    );
+    const activeInside = inside.filter((frame) => frame.rms >= thresholds.activeRms * 0.75);
+    if (activeInside.length > 0) {
+      trimmed = {
+        startMs: Math.max(segment.startMs, activeInside[0].startMs),
+        endMs: Math.min(segment.endMs, activeInside[activeInside.length - 1].endMs),
+      };
     }
 
-    return cleaned.filter((note, index) => {
-        const confidence = note.confidence ?? 0;
-        if (confidence >= 0.68 || index === 0 || index === cleaned.length - 1) return true;
+    segment = trimmed;
+    const duration = segment.endMs - segment.startMs;
+    const startFeature = getFeatureAtTime(features, segment.startMs);
+    const middleFeature = getFeatureAtTime(features, (segment.startMs + segment.endMs) / 2);
+    const segmentRms = middleFeature?.rms || startFeature?.rms || 0;
+    const tooShort = duration < OFFLINE_MIN_SEGMENT_MS;
+    const weakTail =
+      refined.length > 0 &&
+      duration < OFFLINE_MIN_SEGMENT_MS * 1.7 &&
+      segmentRms < thresholds.activeRms * 1.45;
+    const previous = refined[refined.length - 1];
+    const gapFromPrevious = previous ? segment.startMs - previous.endMs : Number.POSITIVE_INFINITY;
+    const closeToPrevious = gapFromPrevious <= OFFLINE_ONSET_MIN_GAP_MS * 0.45;
 
-        const previous = cleaned[index - 1];
-        const next = cleaned[index + 1];
-        const farFromBoth = Math.abs(note.midi - previous.midi) >= 12
-            && Math.abs(note.midi - next.midi) >= 12;
+    if (tooShort && closeToPrevious) {
+      if (previous) previous.endMs = Math.max(previous.endMs, segment.endMs);
+      return;
+    }
 
-        return !farFromBoth;
+    if (tooShort) {
+      if (duration >= TRACKING_MIN_NOTE_MS && segmentRms >= thresholds.activeRms * 0.9) {
+        refined.push({ ...segment });
+      }
+      return;
+    }
+
+    if (weakTail && closeToPrevious) {
+      previous.endMs = Math.max(previous.endMs, segment.endMs);
+      return;
+    }
+
+    refined.push({ ...segment });
+  });
+
+  return refined;
+}
+
+function createOfflineSegments(features, durationMs) {
+  if (features.length === 0) {
+    return {
+      segments: [],
+      thresholds: { activeRms: 0, noiseRms: 0, flux: 0 },
+      ranges: [],
+      onsets: [],
+    };
+  }
+
+  const thresholds = getOfflineThresholds(features);
+  const ranges = getActiveRanges(features, thresholds);
+  const onsets = findOfflineOnsets(features, thresholds);
+  const segments = [];
+
+  ranges.forEach((range) => {
+    const points = [range.startMs];
+    onsets.forEach((onset) => {
+      const farFromStart = onset - range.startMs > OFFLINE_ONSET_MIN_GAP_MS * 0.5;
+      const hasRoomAfter = range.endMs - onset > OFFLINE_MIN_SEGMENT_MS * 0.5;
+      const farFromPrevious = onset - points[points.length - 1] >= OFFLINE_ONSET_MIN_GAP_MS;
+      if (
+        onset > range.startMs &&
+        onset < range.endMs &&
+        farFromStart &&
+        hasRoomAfter &&
+        farFromPrevious
+      ) {
+        const boundary = backtrackBoundaryToEnergyMinimum(onset, features, range);
+        if (hasReattackBoundary(boundary, features, thresholds, range)) {
+          points.push(boundary);
+        }
+      }
     });
+    points.push(...findEnergyValleySplits(range, features, thresholds));
+    const boundaries = normalizeBoundaryPoints([...points, range.endMs], range);
+
+    boundaries.slice(0, -1).forEach((startMs, index) => {
+      const endMs = boundaries[index + 1];
+      if (endMs - startMs >= OFFLINE_MIN_SEGMENT_MS) {
+        segments.push({
+          startMs: clamp(startMs, 0, durationMs),
+          endMs: clamp(endMs, 0, durationMs),
+        });
+      }
+    });
+  });
+
+  return {
+    segments: refineSegmentsByEnergy(segments, features, thresholds),
+    thresholds,
+    ranges,
+    onsets,
+  };
+}
+
+function periodicityAtFrequency(buffer, sampleRate, frequency) {
+  const lag = Math.round(sampleRate / frequency);
+  if (lag < 1 || lag >= buffer.length - 1) return 0;
+
+  let mean = 0;
+  for (let index = 0; index < buffer.length; index += 1) {
+    mean += buffer[index];
+  }
+  mean /= buffer.length;
+
+  let correlation = 0;
+  let energyA = 0;
+  let energyB = 0;
+  for (let index = 0; index < buffer.length - lag; index += 1) {
+    const current = buffer[index] - mean;
+    const delayed = buffer[index + lag] - mean;
+    correlation += current * delayed;
+    energyA += current * current;
+    energyB += delayed * delayed;
+  }
+
+  if (energyA <= 0 || energyB <= 0) return 0;
+  return correlation / Math.sqrt(energyA * energyB);
+}
+
+function spectralMagnitudeAtFrequency(buffer, sampleRate, frequency) {
+  const windowValues = getHannWindow(buffer.length);
+  let real = 0;
+  let imag = 0;
+  let weight = 0;
+
+  for (let index = 0; index < buffer.length; index += 1) {
+    const phase = (-2 * Math.PI * frequency * index) / sampleRate;
+    const sample = buffer[index] * windowValues[index];
+    real += sample * Math.cos(phase);
+    imag += sample * Math.sin(phase);
+    weight += windowValues[index];
+  }
+
+  return Math.hypot(real, imag) / Math.max(1, weight);
+}
+
+function buildSegmentPitchBuffer(
+  samples,
+  sampleRate,
+  segment,
+  attackSkipMs = OFFLINE_ATTACK_SKIP_MS
+) {
+  const durationMs = segment.endMs - segment.startMs;
+  const skippedMs = Math.min(attackSkipMs, durationMs * 0.28);
+  const startSample = Math.floor(((segment.startMs + skippedMs) / 1000) * sampleRate);
+  const endSample = Math.floor((segment.endMs / 1000) * sampleRate);
+  const length = Math.max(0, endSample - startSample);
+  if (length < sampleRate * 0.06) return null;
+
+  const maxLength = Math.min(length, Math.round(sampleRate * 0.55));
+  const offset = Math.max(0, Math.floor((length - maxLength) / 2));
+  return samples.slice(startSample + offset, startSample + offset + maxLength);
+}
+
+function getTrackingPitchThreshold(thresholds) {
+  const noiseRms = thresholds?.noiseRms ?? 0;
+  const activeRms = thresholds?.activeRms ?? 0;
+  return Math.max(0.001, noiseRms * 1.35, activeRms * 0.16, getRmsThreshold() * 0.18);
+}
+
+function getTrackingFrameGate(thresholds) {
+  const noiseRms = thresholds?.noiseRms ?? 0.0001;
+  const activeRms = thresholds?.activeRms ?? 0.0012;
+  return Math.max(0.0009, noiseRms * 1.45, activeRms * 0.32);
+}
+
+function detectTrackingPitchFrames(samples, sampleRate, thresholds = null) {
+  const hopSize = Math.max(256, Math.round((sampleRate * TRACKING_HOP_MS) / 1000));
+  const pitchThreshold = getTrackingPitchThreshold(thresholds);
+  const frameGate = getTrackingFrameGate(thresholds);
+  const pitchBuffer = new Float32Array(BUFFER_SIZE);
+  const frames = [];
+
+  for (let start = 0; start < samples.length; start += hopSize) {
+    const end = Math.min(start + BUFFER_SIZE, samples.length);
+    const available = end - start;
+    if (available < BUFFER_SIZE * 0.45 && frames.length > 0) break;
+
+    const frameRms = calculateRmsRange(samples, start, end);
+    if (frameRms < frameGate) continue;
+
+    pitchBuffer.fill(0);
+    pitchBuffer.set(samples.subarray(start, end));
+
+    const result = detectPitch(pitchBuffer, sampleRate, pitchThreshold);
+    const confidentEnough =
+      result.frequency &&
+      (result.confidence >= TRACKING_CONFIDENCE_FLOOR ||
+        (frameRms >= frameGate * 1.8 && result.confidence >= TRACKING_CONFIDENCE_FLOOR * 0.86));
+    if (!confidentEnough) continue;
+
+    const correctedFrequency = correctOctaveFrequency(pitchBuffer, sampleRate, result.frequency);
+    const noteInfo = frequencyToNote(correctedFrequency);
+    frames.push({
+      startMs: (start / sampleRate) * 1000,
+      endMs: (end / sampleRate) * 1000,
+      time: ((start + available / 2) / sampleRate) * 1000,
+      note: noteInfo.note,
+      midi: noteInfo.midi,
+      pitchClass: noteInfo.pitchClass,
+      frequency: correctedFrequency,
+      cents: noteInfo.cents,
+      confidence: result.confidence,
+      rms: Math.max(frameRms, result.rms || 0),
+    });
+  }
+
+  return frames;
+}
+
+function getDominantMidi(frames) {
+  const weights = new Map();
+  let totalWeight = 0;
+
+  frames.forEach((frame) => {
+    const weight =
+      Math.max(0.1, frame.confidence || 0) * clamp((frame.rms || 0) / 0.035, 0.45, 1.8);
+    totalWeight += weight;
+    weights.set(frame.midi, (weights.get(frame.midi) || 0) + weight);
+  });
+
+  let midi = null;
+  let weight = 0;
+  weights.forEach((value, key) => {
+    if (value > weight) {
+      midi = key;
+      weight = value;
+    }
+  });
+
+  return {
+    midi,
+    ratio: totalWeight > 0 ? weight / totalWeight : 0,
+  };
+}
+
+function smoothTrackedPitchFrames(frames) {
+  const stabilized = stabilizePitchFrames(frames);
+  if (stabilized.length < 5) return stabilized;
+
+  const smoothed = stabilized.map((frame) => ({ ...frame }));
+  for (let index = 0; index < stabilized.length; index += 1) {
+    const windowStart = Math.max(0, index - 2);
+    const windowEnd = Math.min(stabilized.length, index + 3);
+    const dominant = getDominantMidi(stabilized.slice(windowStart, windowEnd));
+    if (dominant.midi !== null && dominant.ratio >= 0.58) {
+      smoothed[index] = clonePitchFrameWithMidi(stabilized[index], dominant.midi);
+    }
+  }
+
+  return stabilizePitchFrames(smoothed);
+}
+
+function buildTrackedNoteFromRun(samples, sampleRate, run) {
+  if (run.length < 2) return null;
+
+  const startMs = run[0].startMs;
+  const endMs = run[run.length - 1].endMs;
+  if (endMs - startMs < TRACKING_MIN_NOTE_MS) return null;
+
+  const yinNote = summarizePitchFrames(run);
+  const segment = { startMs, endMs };
+  const segmentBuffer = buildSegmentPitchBuffer(
+    samples,
+    sampleRate,
+    segment,
+    Math.min(24, (endMs - startMs) * 0.18)
+  );
+  const spectralNote = detectSpectralPitch(segmentBuffer, sampleRate, yinNote?.midi ?? null);
+  const note = correctLowOctaveNoteFromSpectrum(
+    mergePitchEstimates(yinNote, spectralNote),
+    segmentBuffer,
+    sampleRate
+  );
+  if (!note) return null;
+
+  return {
+    ...note,
+    startMs,
+    endMs,
+    segmentRms: calculateRmsRange(
+      samples,
+      (startMs / 1000) * sampleRate,
+      (endMs / 1000) * sampleRate
+    ),
+  };
+}
+
+function closeTrackingRun(notes, samples, sampleRate, run) {
+  const note = buildTrackedNoteFromRun(samples, sampleRate, run);
+  if (note) notes.push(note);
+}
+
+function analyzeStablePitchTrack(samples, sampleRate, thresholds = null) {
+  const frames = smoothTrackedPitchFrames(
+    detectTrackingPitchFrames(samples, sampleRate, thresholds)
+  );
+  if (frames.length < 2) return [];
+
+  const notes = [];
+  let run = [];
+
+  frames.forEach((frame) => {
+    const previous = run[run.length - 1];
+    const startsNewRun =
+      previous &&
+      (frame.time - previous.time > TRACKING_MAX_FRAME_GAP_MS || frame.midi !== previous.midi);
+
+    if (startsNewRun) {
+      closeTrackingRun(notes, samples, sampleRate, run);
+      run = [];
+    }
+
+    run.push(frame);
+  });
+
+  closeTrackingRun(notes, samples, sampleRate, run);
+  return notes;
+}
+
+function getMagnitudeFromSpectrum(magnitudes, sampleRate, fftSize, frequency) {
+  if (frequency <= 0 || frequency >= sampleRate / 2) return 0;
+
+  const exactBin = (frequency / sampleRate) * fftSize;
+  const centerBin = Math.round(exactBin);
+  let best = 0;
+
+  for (let bin = centerBin - 1; bin <= centerBin + 1; bin += 1) {
+    if (bin >= 0 && bin < magnitudes.length) best = Math.max(best, magnitudes[bin]);
+  }
+
+  return best;
+}
+
+function computeLinearSpectrum(buffer, sampleRate) {
+  const fftSize = nextPowerOfTwo(Math.max(2048, buffer.length));
+  const real = new Float32Array(fftSize);
+  const imag = new Float32Array(fftSize);
+  const windowValues = getHannWindow(buffer.length);
+  const maxBin = Math.floor(fftSize / 2);
+
+  for (let index = 0; index < buffer.length; index += 1) {
+    real[index] = buffer[index] * windowValues[index];
+  }
+
+  runFft(real, imag);
+
+  const magnitudes = new Float32Array(maxBin + 1);
+  let peak = 0;
+  for (let bin = 0; bin <= maxBin; bin += 1) {
+    const frequency = (bin / fftSize) * sampleRate;
+    if (frequency < MIN_FREQ || frequency > OFFLINE_SPECTRUM_MAX_FREQ) continue;
+    const magnitude = Math.hypot(real[bin], imag[bin]);
+    magnitudes[bin] = magnitude;
+    peak = Math.max(peak, magnitude);
+  }
+
+  return { magnitudes, fftSize, peak };
+}
+
+function scoreMidiCandidate(magnitudes, sampleRate, fftSize, peak, midi) {
+  const frequency = midiToFrequency(midi);
+  if (frequency < MIN_FREQ || frequency > MAX_FREQ) return 0;
+
+  let harmonicScore = 0;
+  let harmonicWeight = 0;
+  for (let harmonic = 1; harmonic <= 6; harmonic += 1) {
+    const harmonicFrequency = frequency * harmonic;
+    if (harmonicFrequency > Math.min(OFFLINE_SPECTRUM_MAX_FREQ, sampleRate / 2)) break;
+
+    const weight = 1 / Math.sqrt(harmonic);
+    harmonicScore +=
+      getMagnitudeFromSpectrum(magnitudes, sampleRate, fftSize, harmonicFrequency) * weight;
+    harmonicWeight += weight;
+  }
+
+  if (harmonicWeight <= 0 || peak <= 0) return 0;
+
+  const normalizedHarmonics = harmonicScore / harmonicWeight / peak;
+  const fundamental = getMagnitudeFromSpectrum(magnitudes, sampleRate, fftSize, frequency) / peak;
+  const subHarmonic =
+    getMagnitudeFromSpectrum(magnitudes, sampleRate, fftSize, frequency / 2) / peak;
+  const octavePenalty = subHarmonic > fundamental * 1.25 ? 0.72 : 1;
+
+  return normalizedHarmonics * (0.55 + fundamental * 0.45) * octavePenalty;
+}
+
+function scoreHpsMidiCandidate(magnitudes, sampleRate, fftSize, peak, midi) {
+  const frequency = midiToFrequency(midi);
+  if (frequency < MIN_FREQ || frequency > MAX_FREQ || peak <= 0) return 0;
+
+  let score = 1;
+  let factors = 0;
+  for (let harmonic = 1; harmonic <= 4; harmonic += 1) {
+    const magnitude =
+      getMagnitudeFromSpectrum(magnitudes, sampleRate, fftSize, frequency * harmonic) / peak;
+    score *= Math.max(0.015, magnitude);
+    factors += 1;
+  }
+
+  return factors > 0 ? Math.pow(score, 1 / factors) : 0;
+}
+
+function detectSpectralPitch(buffer, sampleRate, hintMidi = null) {
+  if (!buffer || buffer.length < sampleRate * 0.06) return null;
+
+  const { magnitudes, fftSize, peak } = computeLinearSpectrum(buffer, sampleRate);
+  if (peak <= 0) return null;
+
+  const candidates = [];
+  const minMidi = 21;
+  const maxMidi = 96;
+  for (let midi = minMidi; midi <= maxMidi; midi += 1) {
+    const harmonicScore = scoreMidiCandidate(magnitudes, sampleRate, fftSize, peak, midi);
+    const hpsScore = scoreHpsMidiCandidate(magnitudes, sampleRate, fftSize, peak, midi);
+    let score = harmonicScore * 0.68 + hpsScore * 0.32;
+    if (hintMidi !== null) {
+      const distance = Math.abs(midi - hintMidi);
+      if (distance <= 1) score *= 1.18;
+      else if (distance <= 2) score *= 1.06;
+    }
+    candidates.push({ midi, score });
+  }
+
+  candidates.sort((a, b) => b.score - a.score);
+  const best = candidates[0];
+  const second = candidates.find((candidate) => candidate.midi !== best.midi) || { score: 0 };
+  if (!best || best.score < 0.035 || best.score < second.score * 1.08) return null;
+
+  const frequency = midiToFrequency(best.midi);
+  return {
+    note: midiToNote(best.midi),
+    midi: best.midi,
+    pitchClass: ((best.midi % 12) + 12) % 12,
+    frequency,
+    cents: 0,
+    confidence: clamp(best.score / Math.max(0.001, second.score), 0, 2) / 2,
+    score: best.score,
+  };
+}
+
+function mergePitchEstimates(yinNote, spectralNote) {
+  if (!spectralNote) return yinNote;
+  if (!yinNote) return spectralNote;
+
+  const distance = Math.abs(yinNote.midi - spectralNote.midi);
+  if (distance === 0) {
+    return {
+      ...yinNote,
+      confidence: Math.max(yinNote.confidence || 0, spectralNote.confidence || 0),
+    };
+  }
+
+  if (distance === 12 && (spectralNote.score || 0) >= 0.05) {
+    return spectralNote;
+  }
+
+  if ((spectralNote.score || 0) >= 0.09 && (spectralNote.confidence || 0) >= 0.56) {
+    return spectralNote;
+  }
+
+  return yinNote;
+}
+
+function correctLowOctaveNoteFromSpectrum(note, buffer, sampleRate) {
+  if (!note || note.midi >= 48 || !buffer?.length) return note;
+
+  const { magnitudes, fftSize, peak } = computeLinearSpectrum(buffer, sampleRate);
+  if (peak <= 0) return note;
+
+  const currentScore =
+    scoreMidiCandidate(magnitudes, sampleRate, fftSize, peak, note.midi) +
+    scoreHpsMidiCandidate(magnitudes, sampleRate, fftSize, peak, note.midi) * 0.6;
+  let bestMidi = note.midi;
+  let bestScore = currentScore;
+
+  for (let midi = note.pitchClass; midi <= 84; midi += 12) {
+    if (midi < 48) continue;
+    const score =
+      scoreMidiCandidate(magnitudes, sampleRate, fftSize, peak, midi) +
+      scoreHpsMidiCandidate(magnitudes, sampleRate, fftSize, peak, midi) * 0.6;
+
+    if (score > bestScore) {
+      bestMidi = midi;
+      bestScore = score;
+    }
+  }
+
+  if (bestMidi === note.midi || bestScore < Math.max(0.028, currentScore * 0.82)) return note;
+
+  return {
+    ...note,
+    note: midiToNote(bestMidi),
+    midi: bestMidi,
+    pitchClass: ((bestMidi % 12) + 12) % 12,
+    frequency: midiToFrequency(bestMidi),
+    cents: 0,
+    confidence: Math.max(
+      note.confidence || 0,
+      clamp(bestScore / Math.max(0.001, currentScore), 0, 1)
+    ),
+    score: bestScore,
+  };
+}
+
+function correctOctaveFrequency(buffer, sampleRate, frequency) {
+  const lowerFrequency = frequency / 2;
+  const midi = frequencyToMidi(frequency);
+
+  if (midi < 48) {
+    const currentMagnitude = spectralMagnitudeAtFrequency(buffer, sampleRate, frequency);
+    const currentScore = periodicityAtFrequency(buffer, sampleRate, frequency);
+    let bestFrequency = frequency;
+    let bestScore = currentMagnitude * Math.max(0.18, currentScore);
+
+    for (let multiplier = 2; frequency * multiplier <= MAX_FREQ; multiplier *= 2) {
+      const candidate = frequency * multiplier;
+      const candidateMidi = frequencyToMidi(candidate);
+      if (candidateMidi > 84) break;
+
+      const magnitude = spectralMagnitudeAtFrequency(buffer, sampleRate, candidate);
+      const periodicity = periodicityAtFrequency(buffer, sampleRate, candidate);
+      const score = magnitude * Math.max(0.18, periodicity);
+      const strongOctaveSupport = magnitude >= currentMagnitude * 1.15 || score >= bestScore * 1.24;
+
+      if (strongOctaveSupport && periodicity >= 0.24 && score > bestScore) {
+        bestFrequency = candidate;
+        bestScore = score;
+      }
+    }
+
+    if (bestFrequency !== frequency) return bestFrequency;
+  }
+
+  if (lowerFrequency < MIN_FREQ) return frequency;
+
+  const currentScore = periodicityAtFrequency(buffer, sampleRate, frequency);
+  const lowerScore = periodicityAtFrequency(buffer, sampleRate, lowerFrequency);
+  const currentMagnitude = spectralMagnitudeAtFrequency(buffer, sampleRate, frequency);
+  const lowerMagnitude = spectralMagnitudeAtFrequency(buffer, sampleRate, lowerFrequency);
+  const lowerHasSpectralSupport = lowerMagnitude >= currentMagnitude * (midi >= 72 ? 0.22 : 0.32);
+  const requiredRatio = midi >= 72 ? 0.84 : 0.95;
+
+  if (lowerHasSpectralSupport && lowerScore > 0.52 && lowerScore >= currentScore * requiredRatio) {
+    return lowerFrequency;
+  }
+
+  return frequency;
+}
+
+function clonePitchFrameWithMidi(frame, midi) {
+  const frequency = midiToFrequency(midi);
+  return {
+    ...frame,
+    midi,
+    note: midiToNote(midi),
+    pitchClass: ((midi % 12) + 12) % 12,
+    frequency,
+    cents: 0,
+  };
+}
+
+function stabilizePitchFrames(frames) {
+  if (frames.length < 3) return frames;
+
+  const stabilized = frames.map((frame) => ({ ...frame }));
+  for (let index = 1; index < stabilized.length - 1; index += 1) {
+    const previous = stabilized[index - 1];
+    const current = stabilized[index];
+    const next = stabilized[index + 1];
+    const isIsolatedSpike = previous.midi === next.midi && current.midi !== previous.midi;
+    const isOctaveSpike =
+      previous.pitchClass === current.pitchClass &&
+      next.pitchClass === current.pitchClass &&
+      Math.abs(current.midi - previous.midi) >= 12 &&
+      Math.abs(current.midi - next.midi) >= 12;
+
+    if (isIsolatedSpike || isOctaveSpike) {
+      stabilized[index] = clonePitchFrameWithMidi(current, previous.midi);
+    }
+  }
+
+  return stabilized;
+}
+
+function summarizePitchFrames(frames) {
+  if (frames.length < PITCH_SUMMARY_MIN_FRAMES) return null;
+
+  const midiWeights = new Map();
+  const midiFrames = new Map();
+  let totalWeight = 0;
+
+  frames.forEach((frame) => {
+    const weight = Math.max(0.1, frame.confidence) * clamp(frame.rms / 0.035, 0.4, 1.6);
+    totalWeight += weight;
+    midiWeights.set(frame.midi, (midiWeights.get(frame.midi) || 0) + weight);
+    if (!midiFrames.has(frame.midi)) midiFrames.set(frame.midi, []);
+    midiFrames.get(frame.midi).push(frame);
+  });
+
+  let bestMidi = null;
+  let bestWeight = 0;
+  midiWeights.forEach((weight, midi) => {
+    if (weight > bestWeight) {
+      bestMidi = midi;
+      bestWeight = weight;
+    }
+  });
+
+  if (bestMidi === null || bestWeight / totalWeight < 0.42) return null;
+
+  const framesForMidi = midiFrames.get(bestMidi);
+  const medianFrequency = median(framesForMidi.map((frame) => frame.frequency));
+  const medianCents = median(framesForMidi.map((frame) => frame.cents));
+  const medianConfidence = median(framesForMidi.map((frame) => frame.confidence || 0));
+
+  return {
+    note: midiToNote(bestMidi),
+    midi: bestMidi,
+    pitchClass: ((bestMidi % 12) + 12) % 12,
+    frequency: medianFrequency,
+    cents: medianCents,
+    confidence: clamp((bestWeight / totalWeight) * medianConfidence, 0, 1),
+  };
+}
+
+function analyzeOfflineSegment(samples, sampleRate, segment) {
+  const durationMs = segment.endMs - segment.startMs;
+  if (durationMs < OFFLINE_MIN_SEGMENT_MS) return null;
+
+  const attackSkipMs = Math.min(OFFLINE_ATTACK_SKIP_MS, durationMs * 0.28);
+  const startSample = Math.floor(((segment.startMs + attackSkipMs) / 1000) * sampleRate);
+  const endSample = Math.floor((segment.endMs / 1000) * sampleRate);
+  const segmentRms = calculateRmsRange(samples, startSample, endSample);
+  const pitchThreshold = Math.max(0.0015, segmentRms * 0.12, getRmsThreshold() * 0.25);
+  const hopSize = Math.max(256, Math.round(sampleRate * 0.025));
+  const pitchBuffer = new Float32Array(BUFFER_SIZE);
+  const frames = [];
+
+  for (let start = startSample; start < endSample; start += hopSize) {
+    const available = Math.min(BUFFER_SIZE, endSample - start);
+    if (available < BUFFER_SIZE * 0.25 && frames.length > 0) break;
+
+    pitchBuffer.fill(0);
+    pitchBuffer.set(samples.subarray(start, Math.min(start + BUFFER_SIZE, endSample)));
+    const result = detectPitch(pitchBuffer, sampleRate, pitchThreshold);
+    if (!result.frequency) continue;
+
+    const correctedFrequency = correctOctaveFrequency(pitchBuffer, sampleRate, result.frequency);
+    const noteInfo = frequencyToNote(correctedFrequency);
+    frames.push({
+      time: (start / sampleRate) * 1000,
+      note: noteInfo.note,
+      midi: noteInfo.midi,
+      pitchClass: noteInfo.pitchClass,
+      frequency: correctedFrequency,
+      cents: noteInfo.cents,
+      confidence: result.confidence,
+      rms: result.rms,
+    });
+  }
+
+  const yinNote = summarizePitchFrames(stabilizePitchFrames(frames));
+  const segmentBuffer = buildSegmentPitchBuffer(
+    samples,
+    sampleRate,
+    segment,
+    OFFLINE_ATTACK_SKIP_MS
+  );
+  const spectralNote = detectSpectralPitch(segmentBuffer, sampleRate, yinNote?.midi ?? null);
+
+  return correctLowOctaveNoteFromSpectrum(
+    mergePitchEstimates(yinNote, spectralNote),
+    segmentBuffer,
+    sampleRate
+  );
+}
+
+function getSegmentPitchTrace(samples, sampleRate, segment) {
+  const startSample = Math.floor((segment.startMs / 1000) * sampleRate);
+  const endSample = Math.floor((segment.endMs / 1000) * sampleRate);
+  const segmentRms = calculateRmsRange(samples, startSample, endSample);
+  const pitchThreshold = Math.max(0.0015, segmentRms * 0.14, getRmsThreshold() * 0.25);
+  const hopSize = Math.max(256, Math.round(sampleRate * 0.035));
+  const pitchBuffer = new Float32Array(BUFFER_SIZE);
+  const trace = [];
+
+  for (let start = startSample; start < endSample; start += hopSize) {
+    const available = Math.min(BUFFER_SIZE, endSample - start);
+    if (available < BUFFER_SIZE * 0.35 && trace.length > 0) break;
+
+    pitchBuffer.fill(0);
+    pitchBuffer.set(samples.subarray(start, Math.min(start + BUFFER_SIZE, endSample)));
+    const result = detectPitch(pitchBuffer, sampleRate, pitchThreshold);
+    if (!result.frequency) continue;
+
+    const frequency = correctOctaveFrequency(pitchBuffer, sampleRate, result.frequency);
+    trace.push({
+      timeMs: (start / sampleRate) * 1000,
+      midi: frequencyToMidi(frequency),
+      confidence: result.confidence,
+      rms: result.rms,
+    });
+  }
+
+  return trace;
+}
+
+function findPitchSplitPoints(samples, sampleRate, segment) {
+  if (segment.endMs - segment.startMs < OFFLINE_PITCH_SPLIT_MIN_MS * 2) return [];
+
+  const trace = getSegmentPitchTrace(samples, sampleRate, segment).filter(
+    (item) => item.confidence >= MIN_PITCH_CONFIDENCE
+  );
+  if (trace.length < 5) return [];
+
+  const splits = [];
+  let anchorMidi = trace[0].midi;
+  let pending = [];
+
+  for (let index = 1; index < trace.length; index += 1) {
+    const item = trace[index];
+
+    if (Math.abs(item.midi - anchorMidi) <= 0) {
+      pending = [];
+      continue;
+    }
+
+    if (pending.length > 0 && item.midi !== pending[0].midi) {
+      pending = [];
+    }
+
+    pending.push(item);
+    const pendingDuration = pending[pending.length - 1].timeMs - pending[0].timeMs;
+    const enoughBefore = pending[0].timeMs - segment.startMs >= OFFLINE_PITCH_SPLIT_MIN_MS;
+    const enoughAfter = segment.endMs - pending[0].timeMs >= OFFLINE_PITCH_SPLIT_MIN_MS;
+
+    if (pending.length >= 3 && pendingDuration >= 70 && enoughBefore && enoughAfter) {
+      splits.push(pending[0].timeMs);
+      anchorMidi = pending[0].midi;
+      pending = [];
+    }
+  }
+
+  return splits;
+}
+
+function findReattackSplitPoints(features, segment, thresholds = null) {
+  const inside = features.filter(
+    (frame) => frame.time > segment.startMs && frame.time < segment.endMs
+  );
+  if (inside.length < 6 || segment.endMs - segment.startMs < OFFLINE_PITCH_SPLIT_MIN_MS * 2)
+    return [];
+
+  const highRms = percentile(
+    inside.map((frame) => frame.rms),
+    0.86
+  );
+  const splits = [];
+  let lastSplit = segment.startMs;
+
+  for (let index = 2; index < inside.length - 2; index += 1) {
+    const current = inside[index];
+    const previousHigh = Math.max(inside[index - 1].rms, inside[index - 2].rms);
+    const nextHigh = Math.max(inside[index + 1].rms, inside[index + 2].rms);
+    const valley =
+      current.rms < highRms * 0.45 &&
+      current.rms < previousHigh * 0.62 &&
+      current.rms < nextHigh * 0.62;
+    const enoughBefore = current.time - lastSplit >= OFFLINE_PITCH_SPLIT_MIN_MS;
+    const enoughAfter = segment.endMs - current.time >= OFFLINE_PITCH_SPLIT_MIN_MS;
+
+    const reattackSupported =
+      !thresholds || hasReattackBoundary(current.time, features, thresholds, segment);
+
+    if (valley && enoughBefore && enoughAfter && reattackSupported) {
+      splits.push(current.time);
+      lastSplit = current.time;
+    }
+  }
+
+  return splits;
+}
+
+function splitSegmentsByPitch(samples, sampleRate, segments, features = [], thresholds = null) {
+  const refined = [];
+
+  segments.forEach((segment) => {
+    const splitPoints = normalizeBoundaryPoints(
+      [
+        segment.startMs,
+        ...findPitchSplitPoints(samples, sampleRate, segment),
+        ...findReattackSplitPoints(features, segment, thresholds),
+        segment.endMs,
+      ],
+      segment
+    ).slice(1, -1);
+    if (splitPoints.length === 0) {
+      refined.push(segment);
+      return;
+    }
+
+    const boundaries = [segment.startMs, ...splitPoints, segment.endMs];
+    boundaries.slice(0, -1).forEach((startMs, index) => {
+      const endMs = boundaries[index + 1];
+      if (endMs - startMs >= OFFLINE_MIN_SEGMENT_MS) {
+        refined.push({ startMs, endMs });
+      }
+    });
+  });
+
+  return refined;
+}
+
+function getNoteDuration(note) {
+  return Math.max(0, (note.endMs ?? 0) - (note.startMs ?? 0));
+}
+
+function getNoteOverlap(a, b) {
+  const start = Math.max(a.startMs ?? 0, b.startMs ?? 0);
+  const end = Math.min(a.endMs ?? 0, b.endMs ?? 0);
+  return Math.max(0, end - start);
+}
+
+function getNoteReliability(note) {
+  const durationScore = clamp(getNoteDuration(note) / 260, 0.35, 1.4);
+  const confidenceScore = clamp(note.confidence ?? 0.5, 0.24, 1.2);
+  const energyScore = clamp((note.segmentRms ?? 0.01) / 0.035, 0.35, 1.4);
+  return confidenceScore * durationScore * energyScore;
+}
+
+function mergeSameMidiNotes(base, addition) {
+  return {
+    ...base,
+    startMs: Math.min(base.startMs ?? 0, addition.startMs ?? 0),
+    endMs: Math.max(base.endMs ?? 0, addition.endMs ?? 0),
+    confidence: Math.max(base.confidence || 0, addition.confidence || 0),
+    segmentRms: Math.max(base.segmentRms || 0, addition.segmentRms || 0),
+  };
+}
+
+function noteBoundariesAligned(a, b, toleranceMs = 70) {
+  return (
+    Math.abs((a.startMs ?? 0) - (b.startMs ?? 0)) <= toleranceMs &&
+    Math.abs((a.endMs ?? 0) - (b.endMs ?? 0)) <= toleranceMs
+  );
+}
+
+function getMeaningfulOverlappingNoteIndexes(notes, candidate) {
+  const indexes = [];
+
+  notes.forEach((note, index) => {
+    const overlap = getNoteOverlap(note, candidate);
+    if (overlap <= 0) return;
+
+    const shorter = Math.max(1, Math.min(getNoteDuration(note), getNoteDuration(candidate)));
+    if (overlap >= Math.min(90, shorter * 0.5)) indexes.push(index);
+  });
+
+  return indexes;
+}
+
+function addRecognitionCandidate(result, candidate) {
+  const duration = getNoteDuration(candidate);
+  if (duration > 0 && duration < TRACKING_MIN_NOTE_MS * 0.72) return;
+
+  const overlappingIndexes = getMeaningfulOverlappingNoteIndexes(result, candidate);
+  if (
+    candidate.recognitionSource === 'tracked' &&
+    overlappingIndexes.length > 1 &&
+    overlappingIndexes.every((index) => result[index].recognitionSource === 'segment')
+  ) {
+    return;
+  }
+
+  for (const index of overlappingIndexes) {
+    const existing = result[index];
+
+    if (existing.midi === candidate.midi) {
+      if (
+        candidate.recognitionSource === 'tracked' &&
+        existing.recognitionSource === 'segment' &&
+        !noteBoundariesAligned(existing, candidate)
+      ) {
+        return;
+      }
+
+      result[index] = mergeSameMidiNotes(existing, candidate);
+      return;
+    }
+
+    if (getNoteReliability(candidate) > getNoteReliability(existing) * 1.12) {
+      result[index] = candidate;
+    }
+    return;
+  }
+
+  result.push(candidate);
+}
+
+function mergeRecognitionPasses(segmentNotes, trackedNotes) {
+  const result = [];
+  const candidates = [
+    ...segmentNotes
+      .map((note) => ({ ...note, recognitionSource: 'segment' }))
+      .sort((a, b) => (a.startMs ?? 0) - (b.startMs ?? 0)),
+    ...trackedNotes
+      .map((note) => ({ ...note, recognitionSource: 'tracked' }))
+      .sort((a, b) => (a.startMs ?? 0) - (b.startMs ?? 0)),
+  ];
+
+  candidates.forEach((candidate) => addRecognitionCandidate(result, candidate));
+  return result.sort((a, b) => (a.startMs ?? 0) - (b.startMs ?? 0));
+}
+
+function analyzePcmRecording(rawSamples, sampleRate) {
+  const normalized = normalizeSamples(preprocessSamples(rawSamples, sampleRate));
+  const durationMs = (normalized.samples.length / sampleRate) * 1000;
+  const features = createOfflineFeatureFrames(normalized.samples, sampleRate);
+  const segmentation = createOfflineSegments(features, durationMs);
+  const segments = refineSegmentsByEnergy(
+    splitSegmentsByPitch(
+      normalized.samples,
+      sampleRate,
+      segmentation.segments,
+      features,
+      segmentation.thresholds
+    ),
+    features,
+    segmentation.thresholds
+  );
+  const segmentNotes = segments
+    .map((segment) => {
+      const note = analyzeOfflineSegment(normalized.samples, sampleRate, segment);
+      return note
+        ? {
+            ...note,
+            startMs: segment.startMs,
+            endMs: segment.endMs,
+            segmentRms: calculateRmsRange(
+              normalized.samples,
+              (segment.startMs / 1000) * sampleRate,
+              (segment.endMs / 1000) * sampleRate
+            ),
+          }
+        : null;
+    })
+    .filter(Boolean);
+  const trackedNotes = analyzeStablePitchTrack(
+    normalized.samples,
+    sampleRate,
+    segmentation.thresholds
+  );
+  const mergedNotes = mergeRecognitionPasses(segmentNotes, trackedNotes);
+
+  const result = {
+    ...normalized,
+    durationMs,
+    features,
+    notes: cleanupRecognizedNotes(
+      dedupeRecognizedNotes(mergedNotes, features, segmentation.thresholds)
+    ),
+    ...segmentation,
+    segments,
+  };
+
+  window.__soundToScaleLastAnalysis = {
+    durationMs,
+    peak: result.peak,
+    normalizationPeak: result.normalizationPeak,
+    rawRms: result.rawRms,
+    gain: result.gain,
+    thresholds: segmentation.thresholds,
+    ranges: segmentation.ranges,
+    segments,
+    segmentNotes: segmentNotes.map((note) => note.note),
+    trackedNotes: trackedNotes.map((note) => note.note),
+    notes: result.notes.map((note) => note.note),
+    featureRms: {
+      min: percentile(
+        features.map((frame) => frame.rms),
+        0
+      ),
+      median: percentile(
+        features.map((frame) => frame.rms),
+        0.5
+      ),
+      p9: percentile(
+        features.map((frame) => frame.rms),
+        0.9
+      ),
+      max: Math.max(0, ...features.map((frame) => frame.rms)),
+    },
+  };
+
+  return result;
+}
+
+function dedupeRecognizedNotes(notes, features = [], thresholds = null) {
+  return notes.reduce((result, note) => {
+    const previous = result[result.length - 1];
+    if (!previous) {
+      result.push(note);
+      return result;
+    }
+
+    const duration = (note.endMs ?? 0) - (note.startMs ?? 0);
+    const sameMidi = note.midi === previous.midi;
+    const boundaryTime = ((previous.endMs ?? 0) + (note.startMs ?? 0)) / 2;
+    const hasBoundaryReattack = thresholds
+      ? hasReattackBoundary(boundaryTime, features, thresholds, {
+          startMs: previous.startMs ?? boundaryTime - OFFLINE_BOUNDARY_PEAK_WINDOW_MS,
+          endMs: note.endMs ?? boundaryTime + OFFLINE_BOUNDARY_PEAK_WINDOW_MS,
+        })
+      : false;
+    const shortTail = duration > 0 && duration < OFFLINE_MIN_SEGMENT_MS * 1.4;
+    const previousDuration = (previous.endMs ?? 0) - (previous.startMs ?? 0);
+    const segmentedRepeat =
+      sameMidi &&
+      previous.recognitionSource === 'segment' &&
+      note.recognitionSource === 'segment' &&
+      previousDuration >= OFFLINE_MIN_SEGMENT_MS * 0.9 &&
+      duration >= OFFLINE_MIN_SEGMENT_MS * 0.9 &&
+      getNoteOverlap(previous, note) <= Math.min(24, Math.min(previousDuration, duration) * 0.2);
+    const weakTail =
+      previous.segmentRms &&
+      note.segmentRms &&
+      note.segmentRms < previous.segmentRms * 0.32 &&
+      duration < OFFLINE_MIN_SEGMENT_MS * 1.7;
+    const tinyFragment = duration > 0 && duration < OFFLINE_MIN_SEGMENT_MS * 0.72;
+    const sameMidiTail =
+      sameMidi &&
+      previous.segmentRms &&
+      note.segmentRms &&
+      note.segmentRms < previous.segmentRms * 0.5 &&
+      shortTail;
+
+    if (weakTail) {
+      previous.endMs = Math.max(previous.endMs ?? 0, note.endMs ?? 0);
+      return result;
+    }
+
+    if (sameMidi && !hasBoundaryReattack && !segmentedRepeat) {
+      previous.endMs = Math.max(previous.endMs ?? 0, note.endMs ?? 0);
+      previous.confidence = Math.max(previous.confidence || 0, note.confidence || 0);
+      previous.segmentRms = Math.max(previous.segmentRms || 0, note.segmentRms || 0);
+      return result;
+    }
+
+    if (sameMidi && (tinyFragment || sameMidiTail)) {
+      previous.endMs = Math.max(previous.endMs ?? 0, note.endMs ?? 0);
+      previous.confidence = Math.max(previous.confidence || 0, note.confidence || 0);
+      return result;
+    }
+
+    result.push(note);
+    return result;
+  }, []);
+}
+
+function cleanupRecognizedNotes(notes) {
+  const octaveCorrected = notes.map((note, index) => {
+    const previous = notes[index - 1];
+    const next = notes[index + 1];
+    if (!previous || !next || note.midi >= 48 || previous.midi < 48 || next.midi < 48) return note;
+    if (Math.abs(previous.midi - next.midi) > 12) return note;
+
+    const target = (previous.midi + next.midi) / 2;
+    let bestMidi = note.midi;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (let midi = note.pitchClass; midi <= 84; midi += 12) {
+      if (midi < 48) continue;
+      const distance = Math.abs(midi - target);
+      if (distance < bestDistance) {
+        bestMidi = midi;
+        bestDistance = distance;
+      }
+    }
+
+    if (bestMidi === note.midi || bestDistance > 7) return note;
+
+    return {
+      ...note,
+      note: midiToNote(bestMidi),
+      midi: bestMidi,
+      pitchClass: ((bestMidi % 12) + 12) % 12,
+      frequency: midiToFrequency(bestMidi),
+      cents: 0,
+    };
+  });
+
+  const cleaned = octaveCorrected.filter((note) => {
+    const confidence = note.confidence ?? 0;
+    if (confidence > 0 && confidence < 0.42) return false;
+    if (note.midi < 36 && confidence < 0.82) return false;
+    if (note.midi > 96 && confidence < 0.82) return false;
+    return true;
+  });
+
+  while (
+    cleaned.length > 1 &&
+    (cleaned[0].startMs ?? 0) < 1200 &&
+    Math.abs(cleaned[0].midi - cleaned[1].midi) >= 18 &&
+    (cleaned[0].confidence ?? 0) < 0.88
+  ) {
+    cleaned.shift();
+  }
+
+  return cleaned.filter((note, index) => {
+    const confidence = note.confidence ?? 0;
+    if (confidence >= 0.68 || index === 0 || index === cleaned.length - 1) return true;
+
+    const previous = cleaned[index - 1];
+    const next = cleaned[index + 1];
+    const farFromBoth =
+      Math.abs(note.midi - previous.midi) >= 12 && Math.abs(note.midi - next.midi) >= 12;
+
+    return !farFromBoth;
+  });
 }
 
 function getOfflineFailureMessage(result) {
-    if (!result) return '';
-    if (result.durationMs < OFFLINE_MIN_SEGMENT_MS) return '按住时间太短';
-    if (result.peak < 0.00035 || result.rawRms < 0.00012) return '几乎没有输入, 请检查麦克风';
-    if (result.ranges.length === 0) return '声音偏小, 请提高播放音量或靠近麦克风';
-    if (result.segments.length === 0) return '没有分出稳定音段';
-    return '检测到声音, 但音高不够稳定';
+  if (!result) return '';
+  if (result.durationMs < OFFLINE_MIN_SEGMENT_MS) return '按住时间太短';
+  if (result.peak < 0.00035 || result.rawRms < 0.00012) return '几乎没有输入, 请检查麦克风';
+  if (result.ranges.length === 0) return '声音偏小, 请提高播放音量或靠近麦克风';
+  if (result.segments.length === 0) return '没有分出稳定音段';
+  return '检测到声音, 但音高不够稳定';
 }
 
 async function getMicrophoneStream() {
-    const candidates = [
-        {
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: true,
-            channelCount: 1,
-        },
-        {
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false,
-            channelCount: 1,
-        },
-        true,
-    ];
+  const candidates = [
+    {
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: true,
+      channelCount: 1,
+    },
+    {
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+      channelCount: 1,
+    },
+    true,
+  ];
 
-    for (const audio of candidates) {
-        try {
-            return await navigator.mediaDevices.getUserMedia({ audio, video: false });
-        } catch (error) {
-            console.warn('[听音识阶] 麦克风约束失败,尝试下一组约束', error);
-        }
+  for (const audio of candidates) {
+    try {
+      return await navigator.mediaDevices.getUserMedia({ audio, video: false });
+    } catch (error) {
+      console.warn('[听音识阶] 麦克风约束失败,尝试下一组约束', error);
     }
+  }
 
-    return navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: false,
-    });
+  return navigator.mediaDevices.getUserMedia({
+    audio: true,
+    video: false,
+  });
 }
 
 function describeInputTrack() {
-    const [track] = micStream?.getAudioTracks?.() || [];
-    if (!track) return;
+  const [track] = micStream?.getAudioTracks?.() || [];
+  if (!track) return;
 
-    const settings = track.getSettings?.() || {};
-    const parts = [
-        settings.sampleRate ? `${settings.sampleRate}Hz` : null,
-        settings.channelCount ? `${settings.channelCount}ch` : null,
-        settings.autoGainControl === true ? 'AGC' : null,
-    ].filter(Boolean);
+  const settings = track.getSettings?.() || {};
+  const parts = [
+    settings.sampleRate ? `${settings.sampleRate}Hz` : null,
+    settings.channelCount ? `${settings.channelCount}ch` : null,
+    settings.autoGainControl === true ? 'AGC' : null,
+  ].filter(Boolean);
 
-    if (parts.length > 0) {
-        console.info(`[听音识阶] 麦克风输入: ${parts.join(', ')}, gain=${getInputGainValue().toFixed(1)}x`);
-    }
+  if (parts.length > 0) {
+    console.info(
+      `[听音识阶] 麦克风输入: ${parts.join(', ')}, gain=${getInputGainValue().toFixed(1)}x`
+    );
+  }
 }
 
 function createCaptureWorkletUrl() {
-    if (captureWorkletUrl) return captureWorkletUrl;
+  if (captureWorkletUrl) return captureWorkletUrl;
 
-    const source = `
+  const source = `
         class PcmCaptureProcessor extends AudioWorkletProcessor {
             process(inputs) {
                 const input = inputs[0];
@@ -2350,301 +2885,354 @@ function createCaptureWorkletUrl() {
         }
         registerProcessor('pcm-capture-processor', PcmCaptureProcessor);
     `;
-    captureWorkletUrl = URL.createObjectURL(new Blob([source], { type: 'application/javascript' }));
-    return captureWorkletUrl;
+  captureWorkletUrl = URL.createObjectURL(new Blob([source], { type: 'application/javascript' }));
+  return captureWorkletUrl;
 }
 
 async function createAudioWorkletCaptureNode() {
-    if (!audioContext?.audioWorklet || !window.AudioWorkletNode) return null;
+  if (!audioContext?.audioWorklet || !window.AudioWorkletNode) return null;
 
-    await audioContext.audioWorklet.addModule(createCaptureWorkletUrl());
-    const node = new AudioWorkletNode(audioContext, 'pcm-capture-processor', {
-        numberOfInputs: 1,
-        numberOfOutputs: 1,
-        outputChannelCount: [1],
-    });
-    node.port.onmessage = (event) => appendPcmSamples(event.data);
-    return node;
+  await audioContext.audioWorklet.addModule(createCaptureWorkletUrl());
+  const node = new AudioWorkletNode(audioContext, 'pcm-capture-processor', {
+    numberOfInputs: 1,
+    numberOfOutputs: 1,
+    outputChannelCount: [1],
+  });
+  node.port.onmessage = (event) => appendPcmSamples(event.data);
+  return node;
 }
 
 function createScriptProcessorCaptureNode() {
-    const node = audioContext.createScriptProcessor(2048, 1, 1);
-    node.onaudioprocess = (event) => {
-        appendPcmCapture(event.inputBuffer);
-    };
-    return node;
+  const node = audioContext.createScriptProcessor(2048, 1, 1);
+  node.onaudioprocess = (event) => {
+    appendPcmCapture(event.inputBuffer);
+  };
+  return node;
 }
 
 async function connectAudioInput() {
-    micSource = audioContext.createMediaStreamSource(micStream);
-    inputGain = audioContext.createGain();
-    inputGain.gain.value = getInputGainValue();
-    captureSink = audioContext.createGain();
-    captureSink.gain.value = 0;
+  micSource = audioContext.createMediaStreamSource(micStream);
+  inputGain = audioContext.createGain();
+  inputGain.gain.value = getInputGainValue();
+  captureSink = audioContext.createGain();
+  captureSink.gain.value = 0;
 
-    try {
-        captureNode = await createAudioWorkletCaptureNode();
-    } catch (error) {
-        console.warn('[听音识阶] AudioWorklet 捕获不可用, 使用兼容模式', error);
-        captureNode = null;
-    }
+  try {
+    captureNode = await createAudioWorkletCaptureNode();
+  } catch (error) {
+    console.warn('[听音识阶] AudioWorklet 捕获不可用, 使用兼容模式', error);
+    captureNode = null;
+  }
 
-    if (!captureNode) {
-        captureNode = createScriptProcessorCaptureNode();
-    }
+  if (!captureNode) {
+    captureNode = createScriptProcessorCaptureNode();
+  }
 
-    micSource.connect(inputGain);
-    inputGain.connect(captureNode);
-    captureNode.connect(captureSink);
-    captureSink.connect(audioContext.destination);
+  micSource.connect(inputGain);
+  inputGain.connect(captureNode);
+  captureNode.connect(captureSink);
+  captureSink.connect(audioContext.destination);
 }
 
 function disconnectAudioInput() {
-    if (captureNode) {
-        captureNode.disconnect();
-        if ('onaudioprocess' in captureNode) captureNode.onaudioprocess = null;
-        if (captureNode.port) captureNode.port.onmessage = null;
-        captureNode = null;
-    }
+  if (captureNode) {
+    captureNode.disconnect();
+    if ('onaudioprocess' in captureNode) captureNode.onaudioprocess = null;
+    if (captureNode.port) captureNode.port.onmessage = null;
+    captureNode = null;
+  }
 
-    if (captureSink) {
-        captureSink.disconnect();
-        captureSink = null;
-    }
+  if (captureSink) {
+    captureSink.disconnect();
+    captureSink = null;
+  }
 
-    if (inputGain) {
-        inputGain.disconnect();
-        inputGain = null;
-    }
+  if (inputGain) {
+    inputGain.disconnect();
+    inputGain = null;
+  }
 
-    if (micSource) {
-        micSource.disconnect();
-        micSource = null;
-    }
+  if (micSource) {
+    micSource.disconnect();
+    micSource = null;
+  }
 }
 
 async function ensureAudioContextRunning() {
-    if (audioContext?.state === 'suspended') {
-        await audioContext.resume();
-    }
+  if (audioContext?.state === 'suspended') {
+    await audioContext.resume();
+  }
 }
 
 async function startRecording() {
-    if (recording || pendingStart || processingRecording) return;
-    stopPlayback();
+  if (recording || pendingStart || processingRecording || processingUpload) return;
+  stopPlayback();
 
-    if (!navigator.mediaDevices?.getUserMedia) {
-        setStatus('浏览器不支持麦克风');
-        return;
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setStatus('浏览器不支持麦克风');
+    return;
+  }
+
+  if (!window.isSecureContext && location.hostname !== 'localhost') {
+    setStatus('需要 HTTPS 或本地环境');
+    return;
+  }
+
+  pendingStart = true;
+  stopAfterStart = false;
+  syncUploadAvailability();
+  setHoldState('processing');
+  setStatus('请求麦克风');
+
+  try {
+    micStream = await getMicrophoneStream();
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    audioContext = new AudioCtx();
+    await connectAudioInput();
+    await ensureAudioContextRunning();
+    describeInputTrack();
+
+    recording = true;
+    pendingStart = false;
+    syncUploadAvailability();
+    resetPcmCapture();
+
+    setHoldState('recording');
+    setStatus('继续按住, 松开后识别');
+
+    if (stopAfterStart) {
+      stopAfterStart = false;
+      stopRecording(true);
     }
-
-    if (!window.isSecureContext && location.hostname !== 'localhost') {
-        setStatus('需要 HTTPS 或本地环境');
-        return;
-    }
-
-    pendingStart = true;
-    stopAfterStart = false;
-    setHoldState('processing');
-    setStatus('请求麦克风');
-
-    try {
-        micStream = await getMicrophoneStream();
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        audioContext = new AudioCtx();
-        await connectAudioInput();
-        await ensureAudioContextRunning();
-        describeInputTrack();
-
-        recording = true;
-        pendingStart = false;
-        resetPcmCapture();
-
-        setHoldState('recording');
-        setStatus('继续按住, 松开后识别');
-
-        if (stopAfterStart) {
-            stopAfterStart = false;
-            stopRecording(true);
-        }
-    } catch (error) {
-        console.error('[听音识阶] 无法启动麦克风', error);
-        pendingStart = false;
-        setHoldState('idle');
-        setStatus('麦克风不可用');
-    }
+  } catch (error) {
+    console.error('[听音识阶] 无法启动麦克风', error);
+    pendingStart = false;
+    syncUploadAvailability();
+    setHoldState('idle');
+    setStatus('麦克风不可用');
+  }
 }
 
 function closeAudioInput() {
-    disconnectAudioInput();
+  disconnectAudioInput();
 
-    if (micStream) {
-        micStream.getTracks().forEach(track => track.stop());
-        micStream = null;
-    }
+  if (micStream) {
+    micStream.getTracks().forEach((track) => track.stop());
+    micStream = null;
+  }
 
-    if (audioContext) {
-        audioContext.close().catch(() => {});
-        audioContext = null;
-    }
-
+  if (audioContext) {
+    audioContext.close().catch(() => {});
+    audioContext = null;
+  }
 }
 
 async function commitRecording(pcmRecording = null) {
-    setHoldState('processing');
-    setStatus('正在识别');
+  setHoldState('processing');
+  setStatus('正在识别');
 
-    let recognizedNotes = [];
-    let offlineResult = null;
+  const recognizedNotes = recognizePcmRecording(pcmRecording);
+  if (!recognizedNotes) return;
 
-    if (!pcmRecording?.samples?.length || !pcmRecording.sampleRate) {
-        setStatus('没有采集到识别音频');
-        return;
-    }
+  capturedNotes.push(...recognizedNotes);
+  renderSequence();
+  setStatus(`识别完成: ${recognizedNotes.length} 个音`);
+}
 
-    try {
-        offlineResult = analyzePcmRecording(pcmRecording.samples, pcmRecording.sampleRate);
-        recognizedNotes = offlineResult.notes;
-    } catch (error) {
-        console.warn('[听音识阶] PCM 离线识别失败', error);
-        setStatus('识别失败');
-        return;
-    }
+function recognizePcmRecording(pcmRecording = null) {
+  if (!pcmRecording?.samples?.length || !pcmRecording.sampleRate) {
+    setStatus('没有采集到识别音频');
+    return null;
+  }
 
-    if (recognizedNotes.length === 0) {
-        setStatus(getOfflineFailureMessage(offlineResult) || '没有识别到音符');
-        return;
-    }
+  let offlineResult = null;
+  try {
+    offlineResult = analyzePcmRecording(pcmRecording.samples, pcmRecording.sampleRate);
+  } catch (error) {
+    console.warn('[听音识阶] PCM 离线识别失败', error);
+    setStatus('识别失败');
+    return null;
+  }
 
-    capturedNotes.push(...recognizedNotes);
-    renderSequence();
-    setStatus(`识别完成: ${recognizedNotes.length} 个音`);
+  if (offlineResult.notes.length === 0) {
+    setStatus(getOfflineFailureMessage(offlineResult) || '没有识别到音符');
+    return null;
+  }
+
+  return offlineResult.notes;
 }
 
 async function stopRecording(commit = true) {
-    if (pendingStart) {
-        stopAfterStart = commit;
-        return;
-    }
+  if (pendingStart) {
+    stopAfterStart = commit;
+    return;
+  }
 
-    if (!recording || processingRecording) return;
-    processingRecording = commit;
+  if (!recording || processingRecording) return;
+  processingRecording = commit;
 
+  if (commit) {
+    setHoldState('processing');
+    setStatus('正在整理录音');
+    await new Promise((resolve) => window.setTimeout(resolve, 48));
+  }
+
+  recording = false;
+  syncUploadAvailability();
+  const pcmRecording = getCapturedPcmRecording();
+  closeAudioInput();
+
+  try {
     if (commit) {
-        setHoldState('processing');
-        setStatus('正在整理录音');
-        await new Promise(resolve => window.setTimeout(resolve, 48));
+      savePcmRecording(pcmRecording);
+      await commitRecording(pcmRecording);
     }
+  } catch (error) {
+    console.error('[听音识阶] 识别失败', error);
+    setStatus('识别失败');
+  } finally {
+    processingRecording = false;
+    syncUploadAvailability();
+    setHoldState('idle');
+  }
+}
 
-    recording = false;
-    const pcmRecording = getCapturedPcmRecording();
-    closeAudioInput();
+async function handleAudioUpload(file) {
+  if (!file) return;
+  if (recording || pendingStart || processingRecording || processingUpload) {
+    setStatus('请等待当前识别完成');
+    return;
+  }
 
-    try {
-        if (commit) {
-            savePcmRecording(pcmRecording);
-            await commitRecording(pcmRecording);
-        }
-    } catch (error) {
-        console.error('[听音识阶] 识别失败', error);
-        setStatus('识别失败');
-    } finally {
-        processingRecording = false;
-        setHoldState('idle');
-    }
+  stopPlayback();
+  stopOriginalPlayback();
+  setHoldState('processing');
+  setUploadProcessing(true);
+  setStatus('正在读取音频');
+
+  try {
+    const decoded = await decodeAudioBlob(file);
+    saveRecordingBlob(file, decoded.duration, file.name || '上传音频');
+    setStatus('正在识别上传音频');
+
+    const recognizedNotes = recognizePcmRecording({
+      samples: decoded.samples,
+      sampleRate: decoded.sampleRate,
+    });
+    if (!recognizedNotes) return;
+
+    capturedNotes.push(...recognizedNotes);
+    renderSequence();
+    setStatus(`上传识别完成: ${recognizedNotes.length} 个音`);
+  } catch (error) {
+    console.warn('[听音识阶] 上传音频识别失败', error);
+    setStatus('音频文件无法识别');
+  } finally {
+    setUploadProcessing(false);
+    setHoldState('idle');
+  }
 }
 
 function clearSequence() {
-    stopPlayback();
-    capturedNotes = [];
-    bestScale = null;
-    renderSequence();
-    setStatus(recording ? '继续按住, 松开后识别' : '按住开始');
+  stopPlayback();
+  capturedNotes = [];
+  bestScale = null;
+  renderSequence();
+  setStatus(recording ? '继续按住, 松开后识别' : '按住开始');
 }
 
 function removeLastNote() {
-    stopPlayback();
-    capturedNotes.pop();
-    renderSequence();
+  stopPlayback();
+  capturedNotes.pop();
+  renderSequence();
 }
 
 async function copySequence() {
-    const notes = capturedNotes.map(item => item.note).join(' ');
-    const degrees = els.degreeSequence.textContent;
-    const scaleName = bestScale?.name || '未确定';
-    const text = `音符: ${notes || '--'}\n音阶候选: ${scaleName}\n音级: ${degrees || '--'}`;
+  const notes = capturedNotes.map((item) => item.note).join(' ');
+  const degrees = els.degreeSequence.textContent;
+  const scaleName = bestScale?.name || '未确定';
+  const text = `音符: ${notes || '--'}\n音阶候选: ${scaleName}\n音级: ${degrees || '--'}`;
 
-    try {
-        await navigator.clipboard.writeText(text);
-        setStatus('已复制');
-    } catch (error) {
-        console.warn('[听音识阶] 复制失败', error);
-        setStatus('复制失败');
-    }
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus('已复制');
+  } catch (error) {
+    console.warn('[听音识阶] 复制失败', error);
+    setStatus('复制失败');
+  }
 }
 
 function handlePressStart(event) {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
-    event.preventDefault();
-    els.hold.setPointerCapture?.(event.pointerId);
-    startRecording();
+  if (event.pointerType === 'mouse' && event.button !== 0) return;
+  event.preventDefault();
+  els.hold.setPointerCapture?.(event.pointerId);
+  startRecording();
 }
 
 function handlePressEnd(event) {
-    event.preventDefault();
-    stopRecording(true);
+  event.preventDefault();
+  stopRecording(true);
 }
 
 els.hold.addEventListener('pointerdown', handlePressStart);
 els.hold.addEventListener('pointerup', handlePressEnd);
 els.hold.addEventListener('pointercancel', handlePressEnd);
 els.hold.addEventListener('lostpointercapture', () => {
-    if (recording || pendingStart) stopRecording(true);
+  if (recording || pendingStart) stopRecording(true);
 });
 
 els.hold.addEventListener('keydown', (event) => {
-    if ((event.key === ' ' || event.key === 'Enter') && !recording && !pendingStart) {
-        event.preventDefault();
-        startRecording();
-    }
+  if ((event.key === ' ' || event.key === 'Enter') && !recording && !pendingStart) {
+    event.preventDefault();
+    startRecording();
+  }
 });
 
 els.hold.addEventListener('keyup', (event) => {
-    if (event.key === ' ' || event.key === 'Enter') {
-        event.preventDefault();
-        stopRecording(true);
-    }
+  if (event.key === ' ' || event.key === 'Enter') {
+    event.preventDefault();
+    stopRecording(true);
+  }
 });
 
 els.sensitivity.addEventListener('input', syncInputGain);
+els.uploadAudioButton.addEventListener('click', () => {
+  if (els.uploadAudioButton.disabled) return;
+  els.uploadAudioFile.click();
+});
+els.uploadAudioFile.addEventListener('change', () => {
+  const [file] = els.uploadAudioFile.files || [];
+  els.uploadAudioFile.value = '';
+  handleAudioUpload(file);
+});
 els.play.addEventListener('click', playCapturedSequence);
 els.playRecording.addEventListener('click', playSavedRecording);
 els.clearRecording.addEventListener('click', clearSavedRecording);
 els.downloadRecording.addEventListener('click', (event) => {
-    if (!savedRecordingBlob) event.preventDefault();
+  if (!savedRecordingBlob) event.preventDefault();
 });
 els.clear.addEventListener('click', clearSequence);
 els.removeLast.addEventListener('click', removeLastNote);
 els.copy.addEventListener('click', copySequence);
 
 els.sequence.addEventListener('click', (event) => {
-    const chip = event.target.closest('.note-chip');
-    if (!chip) return;
-    const index = Number(chip.dataset.index);
-    if (!Number.isInteger(index)) return;
-    playCapturedNote(index);
+  const chip = event.target.closest('.note-chip');
+  if (!chip) return;
+  const index = Number(chip.dataset.index);
+  if (!Number.isInteger(index)) return;
+  playCapturedNote(index);
 });
 
 window.addEventListener('beforeunload', () => {
-    recording = false;
-    pendingStart = false;
-    stopOriginalPlayback();
-    stopPlayback();
-    if (playbackContext && playbackContext.state !== 'closed') {
-        playbackContext.close().catch(() => {});
-    }
-    revokeSavedRecording();
-    closeAudioInput();
+  recording = false;
+  pendingStart = false;
+  stopOriginalPlayback();
+  stopPlayback();
+  if (playbackContext && playbackContext.state !== 'closed') {
+    playbackContext.close().catch(() => {});
+  }
+  revokeSavedRecording();
+  closeAudioInput();
 });
 
 setRecordingReviewState('idle');

@@ -1,84 +1,114 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>听音识阶 - 光阴的游乐场</title>
-</head>
-<body>
+  </head>
+  <body>
     <div class="container">
-        <a href="../../settings/" class="settings-link" title="设置">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-            </svg>
-        </a>
+      <a href="../../settings/" class="settings-link" title="设置">
+        <svg
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="12" cy="12" r="3"></circle>
+          <path
+            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+          ></path>
+        </svg>
+      </a>
 
-        <header>
-            <h1>听音识阶</h1>
-            <nav>
-                <ul>
-                    <li><a href="../../../index.html#music">← 返回</a></li>
-                    <li><a href="../">音乐练习</a></li>
-                    <li><a href="#" class="active">听音识阶</a></li>
-                </ul>
-            </nav>
-        </header>
+      <header>
+        <h1>听音识阶</h1>
+        <nav>
+          <ul>
+            <li><a href="../../../index.html#music">← 返回</a></li>
+            <li><a href="../">音乐练习</a></li>
+            <li><a href="#" class="active">听音识阶</a></li>
+          </ul>
+        </nav>
+      </header>
 
-        <main class="sound-scale-page">
-            <section class="voice-panel" aria-label="按住识别音高">
-                <div id="detector-status" class="status-pill" aria-live="polite">按住开始</div>
-                <button id="hold-to-record" class="hold-button" type="button" aria-label="按住聆听, 松开识别">
-                    <span class="hold-icon">🎙️</span>
-                    <span id="hold-title">按住聆听</span>
-                    <small id="hold-hint">松开后识别音符与音阶</small>
-                </button>
-                <label class="sensitivity-control" for="sensitivity-slider">
-                    <span>灵敏度</span>
-                    <input id="sensitivity-slider" type="range" min="1" max="10" step="1" value="9">
-                </label>
-            </section>
+      <main class="sound-scale-page">
+        <section class="voice-panel" aria-label="按住识别音高">
+          <div id="detector-status" class="status-pill" aria-live="polite">按住开始</div>
+          <button
+            id="hold-to-record"
+            class="hold-button"
+            type="button"
+            aria-label="按住聆听, 松开识别"
+          >
+            <span class="hold-icon">🎙️</span>
+            <span id="hold-title">按住聆听</span>
+            <small id="hold-hint">松开后识别音符与音阶</small>
+          </button>
+          <label class="sensitivity-control" for="sensitivity-slider">
+            <span>灵敏度</span>
+            <input id="sensitivity-slider" type="range" min="1" max="10" step="1" value="9" />
+          </label>
+        </section>
 
-            <section class="result-panel" aria-label="识别结果">
-                <div class="panel-header">
-                    <h2>识别结果</h2>
-                    <div class="result-actions">
-                        <button id="play-sequence" type="button" disabled>播放</button>
-                        <button id="remove-last" type="button">撤销</button>
-                        <button id="clear-sequence" type="button">清空</button>
-                        <button id="copy-sequence" type="button">复制</button>
-                    </div>
-                </div>
+        <section class="result-panel" aria-label="识别结果">
+          <div class="panel-header">
+            <h2>识别结果</h2>
+            <div class="result-actions">
+              <button id="play-sequence" type="button" disabled>播放</button>
+              <button id="remove-last" type="button">撤销</button>
+              <button id="clear-sequence" type="button">清空</button>
+              <button id="copy-sequence" type="button">复制</button>
+            </div>
+          </div>
 
-                <div id="note-sequence" class="note-sequence empty">等待输入</div>
+          <div id="note-sequence" class="note-sequence empty">等待输入</div>
 
-                <div class="recording-review" aria-label="识别音频回放">
-                    <span id="recording-label">识别音频未保存</span>
-                    <div class="recording-actions">
-                        <button id="play-recording" type="button" disabled>分析音频</button>
-                        <a id="download-recording" class="recording-download disabled" href="#" download="sound-to-scale-analysis.wav" aria-disabled="true">下载</a>
-                        <button id="clear-recording" type="button" disabled>清除</button>
-                    </div>
-                </div>
+          <div class="recording-review" aria-label="识别音频回放">
+            <span id="recording-label">识别音频未保存</span>
+            <div class="recording-actions">
+              <button id="upload-audio-button" type="button">上传</button>
+              <input
+                id="upload-audio-file"
+                class="audio-upload-input"
+                type="file"
+                accept="audio/*,.wav,.mp3,.ogg,.m4a,.aac,.flac"
+              />
+              <button id="play-recording" type="button" disabled>分析音频</button>
+              <a
+                id="download-recording"
+                class="recording-download disabled"
+                href="#"
+                download="sound-to-scale-analysis.wav"
+                aria-disabled="true"
+                >下载</a
+              >
+              <button id="clear-recording" type="button" disabled>清除</button>
+            </div>
+          </div>
 
-                <div class="result-grid">
-                    <div class="result-block">
-                        <span>音阶候选</span>
-                        <div id="scale-candidates" class="scale-candidates empty">等待更多音符</div>
-                    </div>
-                    <div class="result-block">
-                        <span>音级</span>
-                        <strong id="degree-sequence">--</strong>
-                    </div>
-                </div>
-            </section>
-        </main>
+          <div class="result-grid">
+            <div class="result-block">
+              <span>音阶候选</span>
+              <div id="scale-candidates" class="scale-candidates empty">等待更多音符</div>
+            </div>
+            <div class="result-block">
+              <span>音级</span>
+              <strong id="degree-sequence">--</strong>
+            </div>
+          </div>
+        </section>
+      </main>
 
-        <footer>
-            <p>&copy; 2023 光阴的游乐场</p>
-        </footer>
+      <footer>
+        <p>&copy; 2023 光阴的游乐场</p>
+      </footer>
     </div>
 
     <script type="module" src="./main.js"></script>
-</body>
+  </body>
 </html>

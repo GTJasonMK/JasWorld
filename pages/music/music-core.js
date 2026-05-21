@@ -125,22 +125,36 @@ function showInlineResult(element, message, type = 'info') {
 const MELODY_LENGTH_OPTIONS = [3, 4, 5, 7, 9];
 const INTERVAL_MELODY_LENGTH_OPTIONS = [3, 4, 5, 6, 7];
 const INTERVAL_TRAINING_NOTES = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5'];
-const INTERVAL_DEGREE_NAMES = {
-  2: '二度',
-  3: '三度',
-  4: '四度',
-  5: '五度',
-  6: '六度',
-  7: '七度',
-  8: '八度',
+const INTERVAL_MAX_SEMITONES = 12;
+const INTERVAL_SEMITONE_NAMES = {
+  0: '同音',
+  1: '小二度',
+  2: '大二度',
+  3: '小三度',
+  4: '大三度',
+  5: '纯四度',
+  6: '三全音',
+  7: '纯五度',
+  8: '小六度',
+  9: '大六度',
+  10: '小七度',
+  11: '大七度',
+  12: '纯八度',
 };
-const INTERVAL_OPTIONS = ['up', 'down'].flatMap((direction) =>
-  Object.entries(INTERVAL_DEGREE_NAMES).map(([degree, name]) => ({
-    value: `${direction}-${degree}`,
-    direction,
-    degree: Number(degree),
-    label: `${direction === 'up' ? '上行' : '下行'}${name}`,
-  }))
+const INTERVAL_DIRECTIONS = [
+  { value: 'up', label: '上', tabLabel: '上行' },
+  { value: 'down', label: '下', tabLabel: '下行' },
+];
+const INTERVAL_OPTIONS = Object.entries(INTERVAL_SEMITONE_NAMES).flatMap(([semitones, name]) =>
+  Number(semitones) === 0
+    ? []
+    : INTERVAL_DIRECTIONS.map((direction) => ({
+        value: `${direction.value}-${semitones}`,
+        direction: direction.value,
+        semitones: Number(semitones),
+        name,
+        label: `${direction.label}${name}`,
+      }))
 );
 
 // 音频上下文和音频缓存
@@ -603,14 +617,30 @@ function generateRandomMelody(rangeIndex, length) {
   return melody;
 }
 
-function generateIntervalTrainingMelody(length) {
+function getIntervalCandidateNotes(previousNote, availableNotes) {
+  if (!previousNote) return availableNotes;
+
+  const previousMidi = noteToMidi(previousNote);
+  if (previousMidi === null) return availableNotes;
+
+  return availableNotes.filter((note) => {
+    const midi = noteToMidi(note);
+    if (midi === null) return false;
+
+    const semitones = Math.abs(midi - previousMidi);
+    return semitones > 0 && semitones <= INTERVAL_MAX_SEMITONES;
+  });
+}
+
+function generateIntervalTrainingMelody(rangeIndex, length) {
+  const rangeNotes = RANGE_OPTIONS[rangeIndex]?.notes || INTERVAL_TRAINING_NOTES;
+  const availableNotes = rangeNotes.filter((note) => noteToMidi(note) !== null);
   const melody = [];
 
   for (let i = 0; i < length; i++) {
-    let note = INTERVAL_TRAINING_NOTES[Math.floor(Math.random() * INTERVAL_TRAINING_NOTES.length)];
-    while (i > 0 && note === melody[i - 1]) {
-      note = INTERVAL_TRAINING_NOTES[Math.floor(Math.random() * INTERVAL_TRAINING_NOTES.length)];
-    }
+    const candidates = getIntervalCandidateNotes(melody[i - 1], availableNotes);
+    const sourceNotes = candidates.length > 0 ? candidates : availableNotes;
+    const note = sourceNotes[Math.floor(Math.random() * sourceNotes.length)];
     melody.push(note);
   }
 
@@ -618,20 +648,30 @@ function generateIntervalTrainingMelody(length) {
 }
 
 function getDirectedInterval(fromNote, toNote) {
-  const fromIndex = INTERVAL_TRAINING_NOTES.indexOf(normalizeNoteName(fromNote));
-  const toIndex = INTERVAL_TRAINING_NOTES.indexOf(normalizeNoteName(toNote));
-  if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return null;
+  const fromMidi = noteToMidi(fromNote);
+  const toMidi = noteToMidi(toNote);
+  if (fromMidi === null || toMidi === null) return null;
 
-  const direction = toIndex > fromIndex ? 'up' : 'down';
-  const degree = Math.abs(toIndex - fromIndex) + 1;
-  const degreeName = INTERVAL_DEGREE_NAMES[degree];
-  if (!degreeName) return null;
+  const delta = toMidi - fromMidi;
+  const semitones = Math.abs(delta);
+  const intervalName = INTERVAL_SEMITONE_NAMES[semitones];
+  if (!intervalName) return null;
 
+  if (delta === 0) {
+    return {
+      value: 'same-0',
+      direction: 'same',
+      semitones,
+      label: intervalName,
+    };
+  }
+
+  const direction = delta > 0 ? 'up' : 'down';
   return {
-    value: `${direction}-${degree}`,
+    value: `${direction}-${semitones}`,
     direction,
-    degree,
-    label: `${direction === 'up' ? '上行' : '下行'}${degreeName}`,
+    semitones,
+    label: `${direction === 'up' ? '上' : '下'}${intervalName}`,
   };
 }
 
@@ -1252,6 +1292,9 @@ function initMultiNoteTrainingListeners() {
 
 // 创建音程训练UI
 function createIntervalTrainingUI() {
+  const settings = loadUserSettings();
+  const gameSettings = settings.game || { startingDifficulty: 0 };
+  const defaultDifficulty = gameSettings.startingDifficulty || 0;
   const defaultMelodyLength = 4;
 
   return `
@@ -1264,6 +1307,12 @@ function createIntervalTrainingUI() {
                           (length) =>
                             `<option value="${length}" ${length === defaultMelodyLength ? 'selected' : ''}>${length}个音符</option>`
                         ).join('')}
+                    </select>
+                </div>
+                <div class="difficulty-selection">
+                    <label for="interval-range">音域</label>
+                    <select id="interval-range">
+                        ${renderRangeOptions(defaultDifficulty)}
                     </select>
                 </div>
                 <div class="game-stats">
@@ -1299,6 +1348,21 @@ function createIntervalTrainingUI() {
                 <div class="right-panel">
                     <div class="notes-section">
                         <h4>可选音程</h4>
+                        <div class="interval-direction-tabs" role="tablist" aria-label="音程方向">
+                            ${INTERVAL_DIRECTIONS.map(
+                              (direction) => `
+                                <button
+                                    type="button"
+                                    class="interval-direction-tab ${direction.value}"
+                                    data-interval-direction="${direction.value}"
+                                    role="tab"
+                                    aria-selected="${direction.value === 'up' ? 'true' : 'false'}"
+                                >
+                                    ${direction.tabLabel}
+                                </button>
+                            `
+                            ).join('')}
+                        </div>
                         <div id="interval-options" class="interval-options-grid">
                             <!-- 音程选择将在这里生成 -->
                         </div>
@@ -1313,10 +1377,12 @@ function initIntervalTrainingListeners() {
   let currentMelody = [];
   let correctIntervals = [];
   let userIntervals = [];
+  let selectedIntervalDirection = 'up';
   let intervalScore = 0;
   let highScore = Number(localStorage.getItem('intervalTrainingHighScore') || 0);
 
   const melodyLengthSelect = document.getElementById('interval-melody-length');
+  const intervalRangeSelect = document.getElementById('interval-range');
   const playMelodyBtn = document.getElementById('play-interval-melody');
   const newMelodyBtn = document.getElementById('new-interval-melody');
   const checkIntervalsBtn = document.getElementById('check-intervals');
@@ -1324,6 +1390,7 @@ function initIntervalTrainingListeners() {
   const melodyDisplay = document.getElementById('interval-melody-display');
   const userSelectionDiv = document.getElementById('interval-user-selection');
   const intervalOptionsDiv = document.getElementById('interval-options');
+  const intervalDirectionTabs = document.querySelectorAll('[data-interval-direction]');
   const scoreDisplay = document.getElementById('interval-score');
   const highScoreDisplay = document.getElementById('interval-high-score');
   const resultDisplay = document.getElementById('interval-result');
@@ -1332,7 +1399,8 @@ function initIntervalTrainingListeners() {
 
   function generateNewIntervalMelody() {
     const melodyLength = parseInt(melodyLengthSelect.value);
-    currentMelody = generateIntervalTrainingMelody(melodyLength);
+    const intervalRange = parseInt(intervalRangeSelect.value);
+    currentMelody = generateIntervalTrainingMelody(intervalRange, melodyLength);
     correctIntervals = getMelodyIntervals(currentMelody);
     userIntervals = [];
 
@@ -1391,21 +1459,47 @@ function initIntervalTrainingListeners() {
   function updateIntervalOptions() {
     intervalOptionsDiv.innerHTML = '';
 
-    INTERVAL_OPTIONS.forEach((option) => {
-      const optionButton = document.createElement('button');
-      optionButton.type = 'button';
-      optionButton.className = `interval-option ${option.direction}`;
-      optionButton.textContent = option.label;
-      optionButton.addEventListener('click', () => {
-        if (userIntervals.length >= correctIntervals.length) return;
-        userIntervals.push(option);
-        updateUserSelection(false);
-        showInlineResult(resultDisplay, '', 'info');
-      });
+    INTERVAL_OPTIONS.filter((option) => option.direction === selectedIntervalDirection).forEach(
+      (option) => {
+        const optionButton = document.createElement('button');
+        optionButton.type = 'button';
+        optionButton.className = `interval-option ${option.direction}`;
+        optionButton.textContent = option.name;
+        optionButton.setAttribute('aria-label', option.label);
+        optionButton.addEventListener('click', () => {
+          if (userIntervals.length >= correctIntervals.length) return;
+          userIntervals.push(option);
+          updateUserSelection(false);
+          showInlineResult(resultDisplay, '', 'info');
+        });
 
-      intervalOptionsDiv.appendChild(optionButton);
+        intervalOptionsDiv.appendChild(optionButton);
+      }
+    );
+  }
+
+  function updateIntervalDirectionTabs() {
+    intervalDirectionTabs.forEach((tab) => {
+      const isActive = tab.dataset.intervalDirection === selectedIntervalDirection;
+      tab.classList.toggle('active', isActive);
+      tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
     });
   }
+
+  function setIntervalDirection(direction) {
+    if (direction === selectedIntervalDirection) return;
+    selectedIntervalDirection = direction;
+    updateIntervalDirectionTabs();
+    updateIntervalOptions();
+  }
+
+  intervalDirectionTabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+      setIntervalDirection(tab.dataset.intervalDirection);
+    });
+  });
+
+  updateIntervalDirectionTabs();
 
   function clearLastAnswer() {
     userIntervals.pop();
@@ -1464,6 +1558,7 @@ function initIntervalTrainingListeners() {
   }
 
   melodyLengthSelect.addEventListener('change', generateNewIntervalMelody);
+  intervalRangeSelect.addEventListener('change', generateNewIntervalMelody);
   playMelodyBtn.addEventListener('click', playCurrentMelody);
   newMelodyBtn.addEventListener('click', generateNewIntervalMelody);
   checkIntervalsBtn.addEventListener('click', checkAnswer);
@@ -1556,7 +1651,7 @@ if (document.readyState === 'loading') {
 function addTouchFeedback() {
   // 针对所有可交互元素添加触摸反馈
   const interactiveElements = document.querySelectorAll(
-    '.note-button, .scale-button, .play-button, .music-card, .selected-note, .delete-note, .interval-option, .interval-answer-slot, .secondary-action'
+    '.note-button, .scale-button, .play-button, .music-card, .selected-note, .delete-note, .interval-direction-tab, .interval-option, .interval-answer-slot, .secondary-action'
   );
 
   interactiveElements.forEach((el) => {
@@ -1620,6 +1715,11 @@ function initMusicUI() {
         targetContainer.style.display = 'block';
         // 加载对应的音乐内容
         loadMusicContent(id);
+        if (isMobileDevice()) {
+          requestAnimationFrame(() => {
+            targetContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          });
+        }
       }
     };
 

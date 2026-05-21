@@ -434,6 +434,53 @@ label {
   color: var(--note-incorrect);
 }
 
+.interval-direction-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 4px;
+  border: 1px solid var(--music-muted-border);
+  border-radius: 6px;
+}
+
+.interval-direction-tab {
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent !important;
+  color: var(--text-color);
+  cursor: pointer;
+  font-weight: 700;
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.interval-direction-tab:hover,
+.interval-direction-tab:focus-visible {
+  border-color: var(--primary-color);
+  color: var(--header-color);
+  outline: none;
+}
+
+.interval-direction-tab.active {
+  border-color: var(--primary-color);
+  color: var(--header-color);
+}
+
+.interval-direction-tab.up.active {
+  border-color: var(--note-correct);
+  color: var(--note-correct);
+}
+
+.interval-direction-tab.down.active {
+  border-color: var(--note-incorrect);
+  color: var(--note-incorrect);
+}
+
 .interval-options-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -638,7 +685,7 @@ label {
   }
 
   .interval-options-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .interval-melody-display {
@@ -654,5 +701,185 @@ label {
     left: 50%;
     width: 90vw;
     transform: translateX(-50%);
+  }
+}
+
+@media (max-width: 640px) {
+  #interval-training-container {
+    --interval-mobile-options-height: clamp(212px, 30vh, 236px);
+    --interval-mobile-controls-offset: calc(
+      var(--interval-mobile-options-height) + 16px + env(safe-area-inset-bottom)
+    );
+    padding-bottom: calc(
+      var(--interval-mobile-options-height) + 88px + env(safe-area-inset-bottom)
+    );
+    transform: none !important;
+  }
+
+  .interval-training-layout {
+    gap: 10px;
+  }
+
+  .interval-training-layout .left-panel {
+    padding: 10px;
+    backdrop-filter: none;
+  }
+
+  .interval-training-layout .melody-play-section,
+  .interval-training-layout .melody-answer-section {
+    padding: 10px;
+    margin-bottom: 8px;
+    backdrop-filter: none;
+  }
+
+  .interval-training-layout .melody-actions,
+  .interval-training-layout .controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .interval-training-layout .controls {
+    position: fixed;
+    right: 10px;
+    bottom: var(--interval-mobile-controls-offset);
+    left: 10px;
+    z-index: 910;
+  }
+
+  .interval-training-layout .melody-actions .play-button,
+  .interval-training-layout .melody-actions #new-interval-melody,
+  .interval-training-layout .controls #check-intervals,
+  .interval-training-layout .controls .secondary-action {
+    width: auto;
+    min-height: 40px;
+    padding: 8px 10px;
+  }
+
+  .interval-training-layout .melody-display,
+  .interval-training-layout .user-selection {
+    min-height: 48px;
+    gap: 6px;
+  }
+
+  .interval-training-layout .note-slot {
+    width: 40px;
+    height: 38px;
+  }
+
+  .interval-training-layout .interval-bridge {
+    min-width: 36px;
+    min-height: 28px;
+    flex: 1 1 42px;
+    padding: 4px 5px;
+    font-size: 12px;
+  }
+
+  .interval-training-layout .interval-user-selection {
+    grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
+    gap: 6px;
+  }
+
+  .interval-training-layout .interval-answer-slot {
+    min-height: 38px;
+    padding: 6px 8px;
+    font-size: 13px;
+  }
+
+  .interval-training-layout > .right-panel {
+    position: fixed;
+    right: 10px;
+    bottom: calc(8px + env(safe-area-inset-bottom));
+    left: 10px;
+    z-index: 900;
+    height: var(--interval-mobile-options-height);
+    padding: 10px;
+    overflow: hidden;
+    border-color: var(--music-surface-border);
+    box-shadow: 0 -12px 34px rgba(0, 0, 0, 0.28);
+  }
+
+  .interval-training-layout > .right-panel .notes-section {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  .interval-training-layout > .right-panel .notes-section h4 {
+    flex: 0 0 auto;
+    margin-bottom: 6px;
+    font-size: 14px;
+    line-height: 1.2;
+  }
+
+  .interval-training-layout .interval-direction-tabs {
+    flex: 0 0 auto;
+    gap: 5px;
+    margin-bottom: 6px;
+    padding: 3px;
+  }
+
+  .interval-training-layout .interval-direction-tab {
+    min-height: 32px;
+    padding: 5px 8px;
+    font-size: 13px;
+  }
+
+  .interval-training-layout .interval-options-grid {
+    flex: 1 1 auto;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 2px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .interval-training-layout .interval-option {
+    min-height: 36px;
+    padding: 6px 4px;
+    font-size: 13px;
+    line-height: 1.15;
+    touch-action: manipulation;
+  }
+
+  .interval-training-layout #interval-result:not(:empty) {
+    position: fixed;
+    right: 10px;
+    bottom: calc(var(--interval-mobile-controls-offset) + 48px);
+    left: 10px;
+    z-index: 911;
+    min-height: 0;
+    margin: 0;
+    padding: 6px 8px;
+    border: 1px solid var(--music-muted-border);
+    border-radius: 6px;
+    background: var(--container-bg);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+    font-size: 13px;
+    line-height: 1.25;
+    text-align: center;
+  }
+}
+
+@media (max-width: 640px) and (max-height: 560px) {
+  #interval-training-container {
+    --interval-mobile-options-height: clamp(180px, 36vh, 204px);
+  }
+
+  .interval-training-layout .interval-options-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .interval-training-layout .interval-option {
+    min-height: 32px;
+    font-size: 12px;
   }
 }

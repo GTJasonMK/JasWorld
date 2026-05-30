@@ -126,6 +126,19 @@ const MELODY_LENGTH_OPTIONS = [3, 4, 5, 7, 9];
 const INTERVAL_MELODY_LENGTH_OPTIONS = [3, 4, 5, 6, 7];
 const INTERVAL_TRAINING_NOTES = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5'];
 const INTERVAL_MAX_SEMITONES = 12;
+const AUTO_MELODY_WAIT_OPTIONS = [2, 3, 5, 8, 12];
+const AUTO_MELODY_BATCH_ROUNDS = 20;
+const AUTO_MELODY_ANSWER_MODES = [
+  { value: 'note', label: '音名' },
+  { value: 'solfege', label: '唱名' },
+];
+const AUTO_MELODY_LEAD_IN_SECONDS = 0.4;
+const AUTO_MELODY_NOTE_SECONDS = 0.72;
+const AUTO_MELODY_NOTE_STEP_SECONDS = 0.84;
+const AUTO_ANSWER_NOTE_SECONDS = 0.48;
+const AUTO_ANSWER_NOTE_STEP_SECONDS = 0.6;
+const AUTO_ANSWER_START_OFFSET_SECONDS = 0.24;
+const AUTO_ROUND_GAP_SECONDS = 1.1;
 const INTERVAL_SEMITONE_NAMES = {
   0: '同音',
   1: '小二度',
@@ -156,6 +169,20 @@ const INTERVAL_OPTIONS = Object.entries(INTERVAL_SEMITONE_NAMES).flatMap(([semit
         label: `${direction.label}${name}`,
       }))
 );
+const SOLFEGE_NAMES = {
+  C: 'Do',
+  'C#': '升Do',
+  D: 'Re',
+  'D#': '升Re',
+  E: 'Mi',
+  F: 'Fa',
+  'F#': '升Fa',
+  G: 'Sol',
+  'G#': '升Sol',
+  A: 'La',
+  'A#': '升La',
+  B: 'Si',
+};
 
 // 音频上下文和音频缓存
 let audioContext = null;
@@ -684,6 +711,225 @@ function getMelodyIntervals(melody) {
   return intervals;
 }
 
+function formatAnswerNote(note, mode) {
+  const normalizedNote = normalizeNoteName(note) || note;
+  if (mode !== 'solfege') return normalizedNote;
+
+  const match = /^([A-G]#?)(-?\d+)$/.exec(normalizedNote);
+  if (!match) return normalizedNote;
+
+  const [, pitchName, octave] = match;
+  return `${SOLFEGE_NAMES[pitchName] || pitchName}${octave}`;
+}
+
+function formatMelodyAnswer(melody, mode) {
+  return melody.map((note) => formatAnswerNote(note, mode));
+}
+
+function formatSpeechAnswer(labels) {
+  return labels
+    .map((label) =>
+      label
+        .replace(/#/g, '升')
+        .replace(/(-?\d+)$/g, ' $1')
+        .replace(/([A-G])(?=升|\s|$)/g, '$1 ')
+    )
+    .join('，');
+}
+
+function getSequenceDuration(noteCount, stepSeconds, noteSeconds) {
+  if (noteCount <= 0) return 0;
+  return (noteCount - 1) * stepSeconds + noteSeconds;
+}
+
+function createAutoMelodySession(options) {
+  const { rangeIndex, melodyLength, answerDelay, answerMode } = options;
+  const roundCount = AUTO_MELODY_BATCH_ROUNDS;
+  const rounds = [];
+  let cursor = AUTO_MELODY_LEAD_IN_SECONDS;
+
+  for (let index = 0; index < roundCount; index++) {
+    const melody = generateIntervalTrainingMelody(rangeIndex, melodyLength);
+    const answerLabels = formatMelodyAnswer(melody, answerMode);
+    const melodyStart = cursor;
+    const melodyEnd =
+      melodyStart +
+      getSequenceDuration(melody.length, AUTO_MELODY_NOTE_STEP_SECONDS, AUTO_MELODY_NOTE_SECONDS);
+    const answerRevealTime = melodyEnd + answerDelay;
+    const answerStart = answerRevealTime + AUTO_ANSWER_START_OFFSET_SECONDS;
+    const answerEnd =
+      answerStart +
+      getSequenceDuration(melody.length, AUTO_ANSWER_NOTE_STEP_SECONDS, AUTO_ANSWER_NOTE_SECONDS);
+    const endTime = answerEnd + AUTO_ROUND_GAP_SECONDS;
+
+    rounds.push({
+      index,
+      melody,
+      answerLabels,
+      melodyStart,
+      melodyEnd,
+      answerRevealTime,
+      answerStart,
+      answerEnd,
+      endTime,
+    });
+    cursor = endTime;
+  }
+
+  return {
+    ...options,
+    rounds,
+    duration: cursor + 0.4,
+  };
+}
+
+async function getTrainingAudioBuffer(note) {
+  if (audioBufferCache[note]) return audioBufferCache[note];
+
+  try {
+    const buffer = await loadPianoSound(note);
+    audioBufferCache[note] = buffer;
+    return buffer;
+  } catch (error) {
+    debugWarn(`采样加载失败，使用合成音: ${note}`, error);
+    const synthBuffer = createSynthSound(note);
+    if (!synthBuffer) throw error;
+    audioBufferCache[note] = synthBuffer;
+    return synthBuffer;
+  }
+}
+
+function mixAudioBuffer(target, sampleRate, sourceBuffer, startTime, duration, gain = 0.75) {
+  const startSample = Math.max(0, Math.floor(startTime * sampleRate));
+  const maxSamples = Math.min(
+    Math.floor(duration * sampleRate),
+    sourceBuffer.length,
+    target.length - startSample
+  );
+  const channelCount = sourceBuffer.numberOfChannels;
+  const fadeInSamples = Math.max(1, Math.floor(0.018 * sampleRate));
+  const fadeOutSamples = Math.max(1, Math.floor(0.06 * sampleRate));
+
+  for (let i = 0; i < maxSamples; i++) {
+    let value = 0;
+    for (let channel = 0; channel < channelCount; channel++) {
+      value += sourceBuffer.getChannelData(channel)[i] / channelCount;
+    }
+
+    const fadeIn = Math.min(1, i / fadeInSamples);
+    const fadeOut = Math.min(1, (maxSamples - i) / fadeOutSamples);
+    target[startSample + i] += value * gain * Math.min(fadeIn, fadeOut);
+  }
+}
+
+function mixNoteSequence(
+  target,
+  sampleRate,
+  buffers,
+  melody,
+  startTime,
+  stepSeconds,
+  noteSeconds,
+  gain
+) {
+  melody.forEach((note, index) => {
+    const buffer = buffers[note];
+    if (!buffer) return;
+    mixAudioBuffer(target, sampleRate, buffer, startTime + index * stepSeconds, noteSeconds, gain);
+  });
+}
+
+function encodeWav(samples, sampleRate) {
+  const bytesPerSample = 2;
+  const blockAlign = bytesPerSample;
+  const dataSize = samples.length * bytesPerSample;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
+  function writeString(offset, value) {
+    for (let i = 0; i < value.length; i++) {
+      view.setUint8(offset + i, value.charCodeAt(i));
+    }
+  }
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true);
+  writeString(36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  let offset = 44;
+  for (let i = 0; i < samples.length; i++) {
+    const sample = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    offset += 2;
+  }
+
+  return buffer;
+}
+
+async function createAutoMelodyAudioBlob(session) {
+  if (!initAudioContext()) throw new Error('AudioContext 初始化失败');
+  if (audioContext.state === 'suspended') {
+    await audioContext.resume();
+  }
+
+  const uniqueNotes = [...new Set(session.rounds.flatMap((round) => round.melody))];
+  const buffers = {};
+  await Promise.all(
+    uniqueNotes.map(async (note) => {
+      buffers[note] = await getTrainingAudioBuffer(note);
+    })
+  );
+
+  const sampleRate = audioContext.sampleRate;
+  const samples = new Float32Array(Math.ceil(session.duration * sampleRate));
+
+  session.rounds.forEach((round) => {
+    mixNoteSequence(
+      samples,
+      sampleRate,
+      buffers,
+      round.melody,
+      round.melodyStart,
+      AUTO_MELODY_NOTE_STEP_SECONDS,
+      AUTO_MELODY_NOTE_SECONDS,
+      0.82
+    );
+    mixNoteSequence(
+      samples,
+      sampleRate,
+      buffers,
+      round.melody,
+      round.answerStart,
+      AUTO_ANSWER_NOTE_STEP_SECONDS,
+      AUTO_ANSWER_NOTE_SECONDS,
+      0.58
+    );
+  });
+
+  let peak = 0;
+  for (let i = 0; i < samples.length; i++) {
+    peak = Math.max(peak, Math.abs(samples[i]));
+  }
+  if (peak > 0.95) {
+    const scale = 0.95 / peak;
+    for (let i = 0; i < samples.length; i++) {
+      samples[i] *= scale;
+    }
+  }
+
+  return new Blob([encodeWav(samples, sampleRate)], { type: 'audio/wav' });
+}
+
 // 加载用户设置
 function loadUserSettings() {
   try {
@@ -743,6 +989,10 @@ function loadMusicContent(moduleId) {
     case 'interval-training':
       container.innerHTML = createIntervalTrainingUI();
       initIntervalTrainingListeners();
+      break;
+    case 'auto-melody':
+      container.innerHTML = createAutoMelodyPracticeUI();
+      initAutoMelodyPracticeListeners();
       break;
     default:
       container.innerHTML = '<p>请选择一个练习模式</p>';
@@ -1565,6 +1815,328 @@ function initIntervalTrainingListeners() {
   clearAnswerBtn.addEventListener('click', clearLastAnswer);
 
   generateNewIntervalMelody();
+}
+
+function createAutoMelodyPracticeUI() {
+  const settings = loadUserSettings();
+  const gameSettings = settings.game || { melodyLength: 4, startingDifficulty: 0 };
+  const defaultMelodyLength = gameSettings.melodyLength || 4;
+  const defaultDifficulty = gameSettings.startingDifficulty || 0;
+  const defaultWaitSeconds = 5;
+
+  return `
+            <h3>旋律跟听</h3>
+            <div class="training-toolbar auto-melody-toolbar">
+                <div class="difficulty-selection">
+                    <label for="auto-melody-length">长度</label>
+                    <select id="auto-melody-length">
+                        ${MELODY_LENGTH_OPTIONS.map(
+                          (length) =>
+                            `<option value="${length}" ${length === defaultMelodyLength ? 'selected' : ''}>${length}个音符</option>`
+                        ).join('')}
+                    </select>
+                </div>
+                <div class="difficulty-selection">
+                    <label for="auto-melody-range">音域</label>
+                    <select id="auto-melody-range">
+                        ${renderRangeOptions(defaultDifficulty)}
+                    </select>
+                </div>
+                <div class="difficulty-selection">
+                    <label for="auto-answer-delay">等待</label>
+                    <select id="auto-answer-delay">
+                        ${AUTO_MELODY_WAIT_OPTIONS.map(
+                          (seconds) =>
+                            `<option value="${seconds}" ${seconds === defaultWaitSeconds ? 'selected' : ''}>${seconds}秒</option>`
+                        ).join('')}
+                    </select>
+                </div>
+                <div class="difficulty-selection">
+                    <label for="auto-answer-mode">答案</label>
+                    <select id="auto-answer-mode">
+                        ${AUTO_MELODY_ANSWER_MODES.map(
+                          (mode) => `<option value="${mode.value}">${mode.label}</option>`
+                        ).join('')}
+                    </select>
+                </div>
+                <label class="auto-speech-toggle">
+                    <input id="auto-speak-answer" type="checkbox" checked>
+                    <span>语音</span>
+                </label>
+            </div>
+            <div class="compact-container auto-melody-layout">
+                <div class="left-panel">
+                    <div class="melody-play-section">
+                        <div class="melody-actions">
+                            <button id="auto-build-play" class="play-button" type="button">启动播放</button>
+                            <button id="auto-toggle-play" class="secondary-action" type="button">暂停</button>
+                            <button id="auto-stop" class="secondary-action" type="button">停止</button>
+                        </div>
+                        <audio id="auto-melody-audio" class="auto-melody-audio" controls preload="none"></audio>
+                    </div>
+                    <div class="melody-answer-section">
+                        <h4>当前答案</h4>
+                        <div id="auto-playback-status" class="auto-playback-status">未生成</div>
+                        <div id="auto-answer-display" class="auto-answer-display">
+                            ${Array.from({ length: defaultMelodyLength }, () => '<span>?</span>').join('')}
+                        </div>
+                    </div>
+                    <div id="auto-melody-result" class="training-result" aria-live="polite"></div>
+                </div>
+                <div class="right-panel">
+                    <div class="notes-section">
+                        <h4>练习列表</h4>
+                        <div id="auto-round-list" class="auto-round-list"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+}
+
+function initAutoMelodyPracticeListeners() {
+  let session = null;
+  let audioUrl = null;
+  let lastPlaybackTime = 0;
+  const spokenRounds = new Set();
+
+  const lengthSelect = document.getElementById('auto-melody-length');
+  const rangeSelect = document.getElementById('auto-melody-range');
+  const delaySelect = document.getElementById('auto-answer-delay');
+  const modeSelect = document.getElementById('auto-answer-mode');
+  const speakAnswerCheckbox = document.getElementById('auto-speak-answer');
+  const buildPlayBtn = document.getElementById('auto-build-play');
+  const togglePlayBtn = document.getElementById('auto-toggle-play');
+  const stopBtn = document.getElementById('auto-stop');
+  const audioElement = document.getElementById('auto-melody-audio');
+  const statusDisplay = document.getElementById('auto-playback-status');
+  const answerDisplay = document.getElementById('auto-answer-display');
+  const roundList = document.getElementById('auto-round-list');
+  const resultDisplay = document.getElementById('auto-melody-result');
+
+  function getOptions() {
+    return {
+      melodyLength: parseInt(lengthSelect.value),
+      rangeIndex: parseInt(rangeSelect.value),
+      answerDelay: parseInt(delaySelect.value),
+      answerMode: modeSelect.value,
+    };
+  }
+
+  function renderAnswerLabels(labels, hidden = false) {
+    answerDisplay.innerHTML = labels
+      .map((label) => `<span>${hidden ? '?' : label}</span>`)
+      .join('');
+  }
+
+  function renderRoundList() {
+    if (!session) {
+      roundList.innerHTML = '';
+      return;
+    }
+
+    roundList.innerHTML = session.rounds
+      .map(
+        (round) => `
+          <div class="auto-round-item" data-auto-round="${round.index}">
+            <span class="auto-round-number">${round.index + 1}</span>
+            <span class="auto-round-answer">${round.answerLabels.map(() => '?').join(' ')}</span>
+          </div>
+        `
+      )
+      .join('');
+  }
+
+  function updateRoundList(currentRound) {
+    if (!session) return;
+
+    roundList.querySelectorAll('.auto-round-item').forEach((item) => {
+      const index = Number(item.dataset.autoRound);
+      const round = session.rounds[index];
+      const isActive = currentRound && currentRound.index === index;
+      const isRevealed = audioElement.currentTime >= round.answerRevealTime;
+      item.classList.toggle('active', isActive);
+      item.classList.toggle('revealed', isRevealed);
+      item.querySelector('.auto-round-answer').textContent = isRevealed
+        ? round.answerLabels.join(' ')
+        : round.answerLabels.map(() => '?').join(' ');
+    });
+  }
+
+  function speakAnswer(round) {
+    if (
+      !speakAnswerCheckbox.checked ||
+      !('speechSynthesis' in window) ||
+      typeof SpeechSynthesisUtterance === 'undefined'
+    ) {
+      return;
+    }
+    const utterance = new SpeechSynthesisUtterance(formatSpeechAnswer(round.answerLabels));
+    utterance.lang = 'zh-CN';
+    utterance.rate = 0.86;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function getCurrentRound() {
+    if (!session) return null;
+    const currentTime = audioElement.currentTime;
+    return (
+      session.rounds.find(
+        (round) => currentTime >= round.melodyStart && currentTime < round.endTime
+      ) || null
+    );
+  }
+
+  function updatePlaybackState() {
+    if (!session) return;
+
+    const currentTime = audioElement.currentTime;
+    if (currentTime + 0.2 < lastPlaybackTime) {
+      spokenRounds.clear();
+    }
+    lastPlaybackTime = currentTime;
+
+    const currentRound = getCurrentRound();
+    if (!currentRound) {
+      statusDisplay.textContent = audioElement.paused ? '准备播放' : '循环播放中';
+      renderAnswerLabels(
+        Array.from({ length: session.melodyLength }, () => '?'),
+        false
+      );
+      updateRoundList(null);
+      return;
+    }
+
+    const revealAnswer = currentTime >= currentRound.answerRevealTime;
+    const phase = revealAnswer ? '答案' : currentTime < currentRound.melodyEnd ? '旋律' : '等待';
+    statusDisplay.textContent = `循环第 ${currentRound.index + 1} 段 · ${phase}`;
+    renderAnswerLabels(currentRound.answerLabels, !revealAnswer);
+    updateRoundList(currentRound);
+
+    if (revealAnswer && !spokenRounds.has(currentRound.index)) {
+      spokenRounds.add(currentRound.index);
+      speakAnswer(currentRound);
+    }
+  }
+
+  function updateMediaSession() {
+    if (!session || !('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') return;
+
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: '旋律跟听',
+      artist: '琴键之旅',
+      album: `循环播放 · ${RANGE_OPTIONS[session.rangeIndex]?.name || '自定义音域'}`,
+    });
+
+    [
+      ['play', () => audioElement.play()],
+      ['pause', () => audioElement.pause()],
+      ['stop', stopPlayback],
+    ].forEach(([action, handler]) => {
+      try {
+        navigator.mediaSession.setActionHandler(action, handler);
+      } catch (error) {
+        debugWarn(`Media Session 不支持 ${action} 操作`, error);
+      }
+    });
+  }
+
+  function revokeAudioUrl() {
+    if (audioUrl) {
+      URL.revokeObjectURL(audioUrl);
+      audioUrl = null;
+    }
+  }
+
+  function stopPlayback() {
+    audioElement.pause();
+    audioElement.currentTime = 0;
+    lastPlaybackTime = 0;
+    spokenRounds.clear();
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    updatePlaybackState();
+    togglePlayBtn.textContent = '播放';
+  }
+
+  async function buildAndPlay() {
+    try {
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      buildPlayBtn.disabled = true;
+      buildPlayBtn.textContent = '生成中';
+      showInlineResult(resultDisplay, '正在生成训练音频...', 'info');
+      stopPlayback();
+      revokeAudioUrl();
+
+      session = createAutoMelodySession(getOptions());
+      renderRoundList();
+      spokenRounds.clear();
+      const blob = await createAutoMelodyAudioBlob(session);
+      audioUrl = URL.createObjectURL(blob);
+      audioElement.src = audioUrl;
+      audioElement.loop = true;
+      audioElement.currentTime = 0;
+      lastPlaybackTime = 0;
+      updateMediaSession();
+      await audioElement.play();
+      togglePlayBtn.textContent = '暂停';
+      showInlineResult(resultDisplay, '已启动循环播放，点击停止结束', 'success');
+      updatePlaybackState();
+    } catch (error) {
+      debugError('生成自动旋律训练音频失败', error);
+      showInlineResult(resultDisplay, '生成失败，请检查音频资源', 'error');
+    } finally {
+      buildPlayBtn.disabled = false;
+      buildPlayBtn.textContent = '启动播放';
+    }
+  }
+
+  function togglePlayback() {
+    if (!session || !audioElement.src) {
+      buildAndPlay();
+      return;
+    }
+
+    if (audioElement.paused) {
+      audioElement.play();
+      togglePlayBtn.textContent = '暂停';
+    } else {
+      audioElement.pause();
+      togglePlayBtn.textContent = '播放';
+    }
+  }
+
+  [lengthSelect, rangeSelect, delaySelect, modeSelect].forEach((select) => {
+    select.addEventListener('change', () => {
+      if (!session) return;
+      stopPlayback();
+      session = null;
+      revokeAudioUrl();
+      audioElement.removeAttribute('src');
+      audioElement.load();
+      renderAnswerLabels(
+        Array.from({ length: parseInt(lengthSelect.value) }, () => '?'),
+        false
+      );
+      roundList.innerHTML = '';
+      statusDisplay.textContent = '参数已更新';
+      showInlineResult(resultDisplay, '', 'info');
+    });
+  });
+
+  buildPlayBtn.addEventListener('click', buildAndPlay);
+  togglePlayBtn.addEventListener('click', togglePlayback);
+  stopBtn.addEventListener('click', stopPlayback);
+  audioElement.addEventListener('timeupdate', updatePlaybackState);
+  audioElement.addEventListener('play', () => {
+    togglePlayBtn.textContent = '暂停';
+  });
+  audioElement.addEventListener('pause', () => {
+    if (!audioElement.ended) togglePlayBtn.textContent = '播放';
+  });
+  audioElement.addEventListener('ended', () => {
+    togglePlayBtn.textContent = '播放';
+    updatePlaybackState();
+  });
 }
 
 // 尝试预加载基本音符

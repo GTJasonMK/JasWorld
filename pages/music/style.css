@@ -8,7 +8,7 @@
 
 .music-options {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
   margin: 0 0 18px;
   padding: 4px;
@@ -518,6 +518,109 @@ label {
   border-left-color: var(--note-incorrect);
 }
 
+.auto-melody-toolbar {
+  flex-wrap: wrap;
+}
+
+.auto-speech-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--music-muted-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.auto-speech-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary-color);
+}
+
+.auto-melody-layout {
+  grid-template-columns: minmax(280px, 0.95fr) minmax(320px, 1.05fr);
+}
+
+.auto-melody-audio {
+  display: block;
+  width: 100%;
+  min-height: 42px;
+  margin-top: 10px;
+}
+
+.auto-playback-status {
+  min-height: 24px;
+  margin-bottom: 10px;
+  color: var(--text-color);
+  font-size: 14px;
+  font-weight: 700;
+  opacity: 0.82;
+}
+
+.auto-answer-display {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 48px;
+  align-items: center;
+}
+
+.auto-answer-display span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  min-height: 42px;
+  padding: 7px 10px;
+  border: 1px solid var(--music-muted-border);
+  border-radius: 6px;
+  color: var(--header-color);
+  font-weight: 700;
+}
+
+.auto-round-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(58vh, 560px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.auto-round-item {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--music-muted-border);
+  border-radius: 6px;
+  color: var(--text-color);
+}
+
+.auto-round-item.active {
+  border-color: var(--primary-color);
+  color: var(--header-color);
+}
+
+.auto-round-item.revealed {
+  border-color: var(--note-correct);
+}
+
+.auto-round-number {
+  color: var(--secondary-color);
+  font-weight: 800;
+}
+
+.auto-round-answer {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
 .delete-note {
   position: absolute;
   top: -8px;
@@ -660,6 +763,7 @@ label {
 
   .difficulty-selection,
   .difficulty-selection select,
+  .auto-speech-toggle,
   .play-button,
   #new-melody,
   #check-melody,
@@ -695,6 +799,21 @@ label {
   .interval-bridge {
     min-width: 48px;
     flex: 1 1 88px;
+  }
+
+  .auto-melody-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .auto-answer-display span {
+    min-width: 44px;
+    min-height: 38px;
+    padding: 6px 8px;
+    font-size: 13px;
+  }
+
+  .auto-round-list {
+    max-height: 42vh;
   }
 
   #audio-status-bar {

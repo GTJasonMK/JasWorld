@@ -1869,10 +1869,8 @@ function createAutoMelodyPracticeUI() {
                     <div class="melody-play-section">
                         <div class="melody-actions">
                             <button id="auto-build-play" class="play-button" type="button">启动播放</button>
-                            <button id="auto-toggle-play" class="secondary-action" type="button">暂停</button>
-                            <button id="auto-stop" class="secondary-action" type="button">停止</button>
                         </div>
-                        <audio id="auto-melody-audio" class="auto-melody-audio" controls preload="none"></audio>
+                        <audio id="auto-melody-audio" preload="none"></audio>
                     </div>
                     <div class="melody-answer-section">
                         <h4>当前答案</h4>
@@ -1905,8 +1903,6 @@ function initAutoMelodyPracticeListeners() {
   const modeSelect = document.getElementById('auto-answer-mode');
   const speakAnswerCheckbox = document.getElementById('auto-speak-answer');
   const buildPlayBtn = document.getElementById('auto-build-play');
-  const togglePlayBtn = document.getElementById('auto-toggle-play');
-  const stopBtn = document.getElementById('auto-stop');
   const audioElement = document.getElementById('auto-melody-audio');
   const statusDisplay = document.getElementById('auto-playback-status');
   const answerDisplay = document.getElementById('auto-answer-display');
@@ -2051,21 +2047,30 @@ function initAutoMelodyPracticeListeners() {
   function stopPlayback() {
     audioElement.pause();
     audioElement.currentTime = 0;
+    audioElement.loop = false;
+    audioElement.removeAttribute('src');
+    audioElement.load();
     lastPlaybackTime = 0;
+    session = null;
     spokenRounds.clear();
+    revokeAudioUrl();
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-    updatePlaybackState();
-    togglePlayBtn.textContent = '播放';
+    renderAnswerLabels(
+      Array.from({ length: parseInt(lengthSelect.value) }, () => '?'),
+      false
+    );
+    roundList.innerHTML = '';
+    statusDisplay.textContent = '已停止';
+    buildPlayBtn.textContent = '启动播放';
   }
 
   async function buildAndPlay() {
     try {
       if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      stopPlayback();
       buildPlayBtn.disabled = true;
       buildPlayBtn.textContent = '生成中';
       showInlineResult(resultDisplay, '正在生成训练音频...', 'info');
-      stopPlayback();
-      revokeAudioUrl();
 
       session = createAutoMelodySession(getOptions());
       renderRoundList();
@@ -2078,41 +2083,31 @@ function initAutoMelodyPracticeListeners() {
       lastPlaybackTime = 0;
       updateMediaSession();
       await audioElement.play();
-      togglePlayBtn.textContent = '暂停';
+      buildPlayBtn.textContent = '停止播放';
       showInlineResult(resultDisplay, '已启动循环播放，点击停止结束', 'success');
       updatePlaybackState();
     } catch (error) {
       debugError('生成自动旋律训练音频失败', error);
+      stopPlayback();
       showInlineResult(resultDisplay, '生成失败，请检查音频资源', 'error');
     } finally {
       buildPlayBtn.disabled = false;
-      buildPlayBtn.textContent = '启动播放';
+      buildPlayBtn.textContent = session && audioElement.src ? '停止播放' : '启动播放';
     }
   }
 
-  function togglePlayback() {
-    if (!session || !audioElement.src) {
-      buildAndPlay();
-      return;
-    }
-
-    if (audioElement.paused) {
-      audioElement.play();
-      togglePlayBtn.textContent = '暂停';
+  function handlePrimaryPlaybackAction() {
+    if (session || audioElement.src) {
+      stopPlayback();
+      showInlineResult(resultDisplay, '已停止播放', 'info');
     } else {
-      audioElement.pause();
-      togglePlayBtn.textContent = '播放';
+      buildAndPlay();
     }
   }
 
   [lengthSelect, rangeSelect, delaySelect, modeSelect].forEach((select) => {
     select.addEventListener('change', () => {
-      if (!session) return;
-      stopPlayback();
-      session = null;
-      revokeAudioUrl();
-      audioElement.removeAttribute('src');
-      audioElement.load();
+      if (session || audioElement.src) stopPlayback();
       renderAnswerLabels(
         Array.from({ length: parseInt(lengthSelect.value) }, () => '?'),
         false
@@ -2123,18 +2118,12 @@ function initAutoMelodyPracticeListeners() {
     });
   });
 
-  buildPlayBtn.addEventListener('click', buildAndPlay);
-  togglePlayBtn.addEventListener('click', togglePlayback);
-  stopBtn.addEventListener('click', stopPlayback);
+  buildPlayBtn.addEventListener('click', handlePrimaryPlaybackAction);
   audioElement.addEventListener('timeupdate', updatePlaybackState);
-  audioElement.addEventListener('play', () => {
-    togglePlayBtn.textContent = '暂停';
-  });
-  audioElement.addEventListener('pause', () => {
-    if (!audioElement.ended) togglePlayBtn.textContent = '播放';
-  });
+  audioElement.addEventListener('play', updatePlaybackState);
+  audioElement.addEventListener('pause', updatePlaybackState);
   audioElement.addEventListener('ended', () => {
-    togglePlayBtn.textContent = '播放';
+    buildPlayBtn.textContent = '启动播放';
     updatePlaybackState();
   });
 }

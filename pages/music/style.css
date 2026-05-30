@@ -522,23 +522,6 @@ label {
   flex-wrap: wrap;
 }
 
-.auto-speech-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 42px;
-  padding: 8px 10px;
-  border: 1px solid var(--music-muted-border);
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.auto-speech-toggle input {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--primary-color);
-}
-
 .auto-melody-layout {
   grid-template-columns: minmax(280px, 0.95fr) minmax(320px, 1.05fr);
 }
@@ -756,7 +739,6 @@ label {
 
   .difficulty-selection,
   .difficulty-selection select,
-  .auto-speech-toggle,
   .play-button,
   #new-melody,
   #check-melody,

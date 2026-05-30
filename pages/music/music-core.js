@@ -128,16 +128,15 @@ const INTERVAL_TRAINING_NOTES = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5']
 const INTERVAL_MAX_SEMITONES = 12;
 const AUTO_MELODY_WAIT_OPTIONS = [2, 3, 5, 8, 12];
 const AUTO_MELODY_BATCH_ROUNDS = 20;
-const AUTO_MELODY_ANSWER_MODES = [
-  { value: 'note', label: '音名' },
-  { value: 'solfege', label: '唱名' },
-];
 const AUTO_MELODY_LEAD_IN_SECONDS = 0.4;
 const AUTO_MELODY_NOTE_SECONDS = 0.72;
 const AUTO_MELODY_NOTE_STEP_SECONDS = 0.84;
 const AUTO_ANSWER_NOTE_SECONDS = 0.48;
 const AUTO_ANSWER_NOTE_STEP_SECONDS = 0.6;
 const AUTO_ANSWER_START_OFFSET_SECONDS = 0.24;
+const AUTO_SOLFEGE_TTS_SECONDS = 1.5;
+const AUTO_SOLFEGE_TTS_STEP_SECONDS = 1.5;
+const AUTO_SOLFEGE_TTS_START_OFFSET_SECONDS = 0.28;
 const AUTO_ROUND_GAP_SECONDS = 1.1;
 const INTERVAL_SEMITONE_NAMES = {
   0: '同音',
@@ -169,24 +168,25 @@ const INTERVAL_OPTIONS = Object.entries(INTERVAL_SEMITONE_NAMES).flatMap(([semit
         label: `${direction.label}${name}`,
       }))
 );
-const SOLFEGE_NAMES = {
-  C: 'Do',
-  'C#': '升Do',
-  D: 'Re',
-  'D#': '升Re',
-  E: 'Mi',
-  F: 'Fa',
-  'F#': '升Fa',
-  G: 'Sol',
-  'G#': '升Sol',
-  A: 'La',
-  'A#': '升La',
-  B: 'Si',
+const SOLFEGE_DISPLAY_NAMES = {
+  C: 'do',
+  'C#': '升do',
+  D: 're',
+  'D#': '升re',
+  E: 'mi',
+  F: 'fa',
+  'F#': '升fa',
+  G: 'sol',
+  'G#': '升sol',
+  A: 'la',
+  'A#': '升la',
+  B: 'si',
 };
 
 // 音频上下文和音频缓存
 let audioContext = null;
 const audioBufferCache = {};
+const solfegeAudioBufferCache = {};
 let currentPlayingSource = null;
 
 // 调试模式
@@ -293,6 +293,13 @@ function initAudioContext() {
   return true;
 }
 
+function getAppRootPath() {
+  const currentPath = window.location.pathname;
+  return currentPath.includes('/pages/')
+    ? currentPath.slice(0, currentPath.indexOf('/pages/') + 1)
+    : currentPath.replace(/[^/]*$/, '');
+}
+
 // 计算音频文件的路径
 function getAudioPath(note) {
   const fileNote = noteToFileName(note);
@@ -300,11 +307,12 @@ function getAudioPath(note) {
     throw new Error(`音符超出钢琴采样范围: ${note}`);
   }
 
-  const currentPath = window.location.pathname;
-  const appRoot = currentPath.includes('/pages/')
-    ? currentPath.slice(0, currentPath.indexOf('/pages/') + 1)
-    : currentPath.replace(/[^/]*$/, '');
-  return `${window.location.origin}${appRoot}audio/piano/${fileNote}.mp3`;
+  return `${window.location.origin}${getAppRootPath()}audio/piano/${fileNote}.mp3`;
+}
+
+function getSolfegeTtsPath(pitchName) {
+  const fileName = pitchName.replace('#', 's');
+  return `${window.location.origin}${getAppRootPath()}audio/solfege-tts/${fileName}.mp3`;
 }
 
 // 加载音频文件
@@ -711,30 +719,32 @@ function getMelodyIntervals(melody) {
   return intervals;
 }
 
-function formatAnswerNote(note, mode) {
+function getSolfegeParts(note) {
   const normalizedNote = normalizeNoteName(note) || note;
-  if (mode !== 'solfege') return normalizedNote;
-
   const match = /^([A-G]#?)(-?\d+)$/.exec(normalizedNote);
-  if (!match) return normalizedNote;
+  if (!match) return null;
 
   const [, pitchName, octave] = match;
-  return `${SOLFEGE_NAMES[pitchName] || pitchName}${octave}`;
+  return { pitchName, octave };
 }
 
-function formatMelodyAnswer(melody, mode) {
-  return melody.map((note) => formatAnswerNote(note, mode));
+function formatAnswerNote(note) {
+  const parts = getSolfegeParts(note);
+  if (!parts) return normalizeNoteName(note) || note;
+
+  return `${SOLFEGE_DISPLAY_NAMES[parts.pitchName] || parts.pitchName.toLowerCase()}${parts.octave}`;
 }
 
-function formatSpeechAnswer(labels) {
-  return labels
-    .map((label) =>
-      label
-        .replace(/#/g, '升')
-        .replace(/(-?\d+)$/g, ' $1')
-        .replace(/([A-G])(?=升|\s|$)/g, '$1 ')
-    )
-    .join('，');
+function formatMelodyAnswer(melody) {
+  return melody.map((note) => formatAnswerNote(note));
+}
+
+function getSolfegePitchName(note) {
+  const parts = getSolfegeParts(note);
+  if (!parts) {
+    throw new Error(`无法转换唱名: ${note}`);
+  }
+  return parts.pitchName;
 }
 
 function getSequenceDuration(noteCount, stepSeconds, noteSeconds) {
@@ -743,14 +753,14 @@ function getSequenceDuration(noteCount, stepSeconds, noteSeconds) {
 }
 
 function createAutoMelodySession(options) {
-  const { rangeIndex, melodyLength, answerDelay, answerMode } = options;
+  const { rangeIndex, melodyLength, answerDelay } = options;
   const roundCount = AUTO_MELODY_BATCH_ROUNDS;
   const rounds = [];
   let cursor = AUTO_MELODY_LEAD_IN_SECONDS;
 
   for (let index = 0; index < roundCount; index++) {
     const melody = generateIntervalTrainingMelody(rangeIndex, melodyLength);
-    const answerLabels = formatMelodyAnswer(melody, answerMode);
+    const answerLabels = formatMelodyAnswer(melody);
     const melodyStart = cursor;
     const melodyEnd =
       melodyStart +
@@ -760,7 +770,11 @@ function createAutoMelodySession(options) {
     const answerEnd =
       answerStart +
       getSequenceDuration(melody.length, AUTO_ANSWER_NOTE_STEP_SECONDS, AUTO_ANSWER_NOTE_SECONDS);
-    const endTime = answerEnd + AUTO_ROUND_GAP_SECONDS;
+    const speechStart = answerEnd + AUTO_SOLFEGE_TTS_START_OFFSET_SECONDS;
+    const speechEnd =
+      speechStart +
+      getSequenceDuration(melody.length, AUTO_SOLFEGE_TTS_STEP_SECONDS, AUTO_SOLFEGE_TTS_SECONDS);
+    const endTime = speechEnd + AUTO_ROUND_GAP_SECONDS;
 
     rounds.push({
       index,
@@ -771,6 +785,8 @@ function createAutoMelodySession(options) {
       answerRevealTime,
       answerStart,
       answerEnd,
+      speechStart,
+      speechEnd,
       endTime,
     });
     cursor = endTime;
@@ -797,6 +813,21 @@ async function getTrainingAudioBuffer(note) {
     audioBufferCache[note] = synthBuffer;
     return synthBuffer;
   }
+}
+
+async function getSolfegeAudioBuffer(pitchName) {
+  if (!initAudioContext()) throw new Error('AudioContext 初始化失败');
+  if (solfegeAudioBufferCache[pitchName]) return solfegeAudioBufferCache[pitchName];
+
+  const response = await fetch(getSolfegeTtsPath(pitchName));
+  if (!response.ok) {
+    throw new Error(`唱名语音资源加载失败: ${pitchName}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  const buffer = await audioContext.decodeAudioData(arrayBuffer);
+  solfegeAudioBufferCache[pitchName] = buffer;
+  return buffer;
 }
 
 function mixAudioBuffer(target, sampleRate, sourceBuffer, startTime, duration, gain = 0.75) {
@@ -836,6 +867,24 @@ function mixNoteSequence(
     const buffer = buffers[note];
     if (!buffer) return;
     mixAudioBuffer(target, sampleRate, buffer, startTime + index * stepSeconds, noteSeconds, gain);
+  });
+}
+
+function mixSolfegeSequence(target, sampleRate, buffers, melody, startTime, gain) {
+  melody.forEach((note, index) => {
+    const pitchName = getSolfegePitchName(note);
+    const buffer = buffers[pitchName];
+    if (!buffer) {
+      throw new Error(`唱名语音资源未加载: ${pitchName}`);
+    }
+    mixAudioBuffer(
+      target,
+      sampleRate,
+      buffer,
+      startTime + index * AUTO_SOLFEGE_TTS_STEP_SECONDS,
+      Math.min(AUTO_SOLFEGE_TTS_SECONDS, buffer.duration),
+      gain
+    );
   });
 }
 
@@ -883,10 +932,19 @@ async function createAutoMelodyAudioBlob(session) {
   }
 
   const uniqueNotes = [...new Set(session.rounds.flatMap((round) => round.melody))];
+  const uniqueSolfegePitchNames = [
+    ...new Set(uniqueNotes.map((note) => getSolfegePitchName(note))),
+  ];
   const buffers = {};
+  const solfegeBuffers = {};
   await Promise.all(
     uniqueNotes.map(async (note) => {
       buffers[note] = await getTrainingAudioBuffer(note);
+    })
+  );
+  await Promise.all(
+    uniqueSolfegePitchNames.map(async (pitchName) => {
+      solfegeBuffers[pitchName] = await getSolfegeAudioBuffer(pitchName);
     })
   );
 
@@ -914,6 +972,7 @@ async function createAutoMelodyAudioBlob(session) {
       AUTO_ANSWER_NOTE_SECONDS,
       0.58
     );
+    mixSolfegeSequence(samples, sampleRate, solfegeBuffers, round.melody, round.speechStart, 0.92);
   });
 
   let peak = 0;
@@ -1851,18 +1910,6 @@ function createAutoMelodyPracticeUI() {
                         ).join('')}
                     </select>
                 </div>
-                <div class="difficulty-selection">
-                    <label for="auto-answer-mode">答案</label>
-                    <select id="auto-answer-mode">
-                        ${AUTO_MELODY_ANSWER_MODES.map(
-                          (mode) => `<option value="${mode.value}">${mode.label}</option>`
-                        ).join('')}
-                    </select>
-                </div>
-                <label class="auto-speech-toggle">
-                    <input id="auto-speak-answer" type="checkbox" checked>
-                    <span>语音</span>
-                </label>
             </div>
             <div class="compact-container auto-melody-layout">
                 <div class="left-panel">
@@ -1894,14 +1941,10 @@ function createAutoMelodyPracticeUI() {
 function initAutoMelodyPracticeListeners() {
   let session = null;
   let audioUrl = null;
-  let lastPlaybackTime = 0;
-  const spokenRounds = new Set();
 
   const lengthSelect = document.getElementById('auto-melody-length');
   const rangeSelect = document.getElementById('auto-melody-range');
   const delaySelect = document.getElementById('auto-answer-delay');
-  const modeSelect = document.getElementById('auto-answer-mode');
-  const speakAnswerCheckbox = document.getElementById('auto-speak-answer');
   const buildPlayBtn = document.getElementById('auto-build-play');
   const audioElement = document.getElementById('auto-melody-audio');
   const statusDisplay = document.getElementById('auto-playback-status');
@@ -1914,7 +1957,6 @@ function initAutoMelodyPracticeListeners() {
       melodyLength: parseInt(lengthSelect.value),
       rangeIndex: parseInt(rangeSelect.value),
       answerDelay: parseInt(delaySelect.value),
-      answerMode: modeSelect.value,
     };
   }
 
@@ -1958,21 +2000,6 @@ function initAutoMelodyPracticeListeners() {
     });
   }
 
-  function speakAnswer(round) {
-    if (
-      !speakAnswerCheckbox.checked ||
-      !('speechSynthesis' in window) ||
-      typeof SpeechSynthesisUtterance === 'undefined'
-    ) {
-      return;
-    }
-    const utterance = new SpeechSynthesisUtterance(formatSpeechAnswer(round.answerLabels));
-    utterance.lang = 'zh-CN';
-    utterance.rate = 0.86;
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utterance);
-  }
-
   function getCurrentRound() {
     if (!session) return null;
     const currentTime = audioElement.currentTime;
@@ -1987,11 +2014,6 @@ function initAutoMelodyPracticeListeners() {
     if (!session) return;
 
     const currentTime = audioElement.currentTime;
-    if (currentTime + 0.2 < lastPlaybackTime) {
-      spokenRounds.clear();
-    }
-    lastPlaybackTime = currentTime;
-
     const currentRound = getCurrentRound();
     if (!currentRound) {
       statusDisplay.textContent = audioElement.paused ? '准备播放' : '循环播放中';
@@ -2008,11 +2030,6 @@ function initAutoMelodyPracticeListeners() {
     statusDisplay.textContent = `循环第 ${currentRound.index + 1} 段 · ${phase}`;
     renderAnswerLabels(currentRound.answerLabels, !revealAnswer);
     updateRoundList(currentRound);
-
-    if (revealAnswer && !spokenRounds.has(currentRound.index)) {
-      spokenRounds.add(currentRound.index);
-      speakAnswer(currentRound);
-    }
   }
 
   function updateMediaSession() {
@@ -2050,11 +2067,8 @@ function initAutoMelodyPracticeListeners() {
     audioElement.loop = false;
     audioElement.removeAttribute('src');
     audioElement.load();
-    lastPlaybackTime = 0;
     session = null;
-    spokenRounds.clear();
     revokeAudioUrl();
-    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
     renderAnswerLabels(
       Array.from({ length: parseInt(lengthSelect.value) }, () => '?'),
       false
@@ -2066,7 +2080,6 @@ function initAutoMelodyPracticeListeners() {
 
   async function buildAndPlay() {
     try {
-      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
       stopPlayback();
       buildPlayBtn.disabled = true;
       buildPlayBtn.textContent = '生成中';
@@ -2074,17 +2087,15 @@ function initAutoMelodyPracticeListeners() {
 
       session = createAutoMelodySession(getOptions());
       renderRoundList();
-      spokenRounds.clear();
       const blob = await createAutoMelodyAudioBlob(session);
       audioUrl = URL.createObjectURL(blob);
       audioElement.src = audioUrl;
       audioElement.loop = true;
       audioElement.currentTime = 0;
-      lastPlaybackTime = 0;
       updateMediaSession();
       await audioElement.play();
       buildPlayBtn.textContent = '停止播放';
-      showInlineResult(resultDisplay, '已启动循环播放，点击停止结束', 'success');
+      showInlineResult(resultDisplay, '已启动循环播放，音频内含唱名答案', 'success');
       updatePlaybackState();
     } catch (error) {
       debugError('生成自动旋律训练音频失败', error);
@@ -2105,7 +2116,7 @@ function initAutoMelodyPracticeListeners() {
     }
   }
 
-  [lengthSelect, rangeSelect, delaySelect, modeSelect].forEach((select) => {
+  [lengthSelect, rangeSelect, delaySelect].forEach((select) => {
     select.addEventListener('change', () => {
       if (session || audioElement.src) stopPlayback();
       renderAnswerLabels(

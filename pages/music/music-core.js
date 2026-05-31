@@ -190,6 +190,7 @@ const SOLFEGE_DISPLAY_NAMES = {
   'A#': '升la',
   B: 'si',
 };
+const SOLFEGE_TTS_ASSET_VERSION = 'mixed-solfege-4';
 
 // 音频上下文和音频缓存
 let audioContext = null;
@@ -320,7 +321,7 @@ function getAudioPath(note) {
 
 function getSolfegeTtsPath(pitchName) {
   const fileName = pitchName.replace('#', 's');
-  return `${window.location.origin}${getAppRootPath()}audio/solfege-tts/${fileName}.mp3`;
+  return `${window.location.origin}${getAppRootPath()}audio/solfege-tts/${fileName}.mp3?v=${SOLFEGE_TTS_ASSET_VERSION}`;
 }
 
 // 加载音频文件

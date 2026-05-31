@@ -20,23 +20,32 @@ import edge_tts
 SOLFEGE_TEXT = {
     "C": "哆",
     "Cs": "升哆",
-    "D": "来",
-    "Ds": "升来",
-    "E": "咪",
+    "D": "ruī",
+    "Ds": "升 ruī",
+    "E": "mi",
     "F": "发",
     "Fs": "升发",
     "G": "嗦",
     "Gs": "升嗦",
-    "A": "拉",
-    "As": "升拉",
+    "A": "la",
+    "As": "sheng la",
     "B": "西",
 }
 
 
 async def generate_asset(output_dir: Path, name: str, text: str, voice: str, rate: str) -> None:
     output_file = output_dir / f"{name}.mp3"
+    temp_file = output_dir / f"{name}.tmp.mp3"
+    if temp_file.exists():
+        temp_file.unlink()
+
     communicate = edge_tts.Communicate(text=text, voice=voice, rate=rate)
-    await communicate.save(str(output_file))
+    await communicate.save(str(temp_file))
+    if temp_file.stat().st_size <= 0:
+        temp_file.unlink(missing_ok=True)
+        raise RuntimeError(f"Generated empty solfege asset: {name}")
+
+    temp_file.replace(output_file)
 
 
 async def main() -> None:

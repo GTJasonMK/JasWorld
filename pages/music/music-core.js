@@ -145,6 +145,8 @@ const AUTO_ANSWER_PIANO_BODY_FADE_SECONDS = 0.22;
 const AUTO_ANSWER_PIANO_PAN = -0.22;
 const AUTO_SOLFEGE_TTS_GAIN = 0.48;
 const AUTO_SOLFEGE_TTS_PAN = 0.08;
+const AUTO_SOLFEGE_PITCH_TONE_GAIN = 0.22;
+const AUTO_SOLFEGE_PITCH_TONE_PAN = 0.06;
 const AUTO_ROUND_GAP_SECONDS = 1.1;
 const INTERVAL_SEMITONE_NAMES = {
   0: '同音',
@@ -897,6 +899,15 @@ function getBodyEnvelopeMultiplier(index, sampleRate, options) {
   return 1 - (1 - bodyGain) * progress;
 }
 
+function getMonoBufferSample(sourceBuffer, index) {
+  const safeIndex = Math.max(0, Math.min(sourceBuffer.length - 1, index));
+  let value = 0;
+  for (let channel = 0; channel < sourceBuffer.numberOfChannels; channel++) {
+    value += sourceBuffer.getChannelData(channel)[safeIndex] / sourceBuffer.numberOfChannels;
+  }
+  return value;
+}
+
 function mixAudioBuffer(target, sampleRate, sourceBuffer, startTime, duration, options = {}) {
   const settings = typeof options === 'number' ? { gain: options } : options;
   const gain = settings.gain ?? 0.75;
@@ -926,6 +937,47 @@ function mixAudioBuffer(target, sampleRate, sourceBuffer, startTime, duration, o
       value * gain * Math.min(fadeIn, fadeOut) * bodyEnvelope,
       pan
     );
+  }
+}
+
+function mixSolfegePitchTone(target, sampleRate, sourceBuffer, note, startTime, duration, options) {
+  const frequency = noteToFrequency(note);
+  if (!frequency) return;
+
+  const startSample = Math.max(0, Math.floor(startTime * sampleRate));
+  const maxSamples = Math.min(
+    Math.floor(duration * sampleRate),
+    sourceBuffer.length,
+    target.length - startSample
+  );
+  const gain = options.gain ?? 0.2;
+  const pan = options.pan ?? 0;
+  const fadeInSamples = Math.max(1, Math.floor(0.035 * sampleRate));
+  const fadeOutSamples = Math.max(1, Math.floor(0.08 * sampleRate));
+  const phaseStep = (Math.PI * 2 * frequency) / sampleRate;
+  const attack = 0.08;
+  const release = 0.004;
+  let phase = 0;
+  let envelope = 0;
+
+  for (let i = 0; i < maxSamples; i++) {
+    const speechLevel = Math.abs(getMonoBufferSample(sourceBuffer, i));
+    envelope += (speechLevel - envelope) * (speechLevel > envelope ? attack : release);
+
+    const fadeIn = Math.min(1, i / fadeInSamples);
+    const fadeOut = Math.min(1, (maxSamples - i) / fadeOutSamples);
+    const gate = Math.min(1, envelope * 9);
+    const vowelTone =
+      (Math.sin(phase) + 0.32 * Math.sin(phase * 2) + 0.12 * Math.sin(phase * 3)) / 1.44;
+
+    writeMixSample(
+      target,
+      startSample + i,
+      vowelTone * gate * gain * Math.min(fadeIn, fadeOut),
+      pan
+    );
+    phase += phaseStep;
+    if (phase > Math.PI * 2) phase -= Math.PI * 2;
   }
 }
 
@@ -960,6 +1012,18 @@ function mixSolfegeSequence(target, sampleRate, buffers, melody, startTime, opti
       startTime + index * AUTO_SOLFEGE_TTS_STEP_SECONDS,
       Math.min(AUTO_SOLFEGE_TTS_SECONDS, buffer.duration),
       options
+    );
+    mixSolfegePitchTone(
+      target,
+      sampleRate,
+      buffer,
+      note,
+      startTime + index * AUTO_SOLFEGE_TTS_STEP_SECONDS,
+      Math.min(AUTO_SOLFEGE_TTS_SECONDS, buffer.duration),
+      {
+        gain: AUTO_SOLFEGE_PITCH_TONE_GAIN,
+        pan: AUTO_SOLFEGE_PITCH_TONE_PAN,
+      }
     );
   });
 }
@@ -2182,7 +2246,7 @@ function initAutoMelodyPracticeListeners() {
       updateMediaSession();
       await audioElement.play();
       buildPlayBtn.textContent = '停止播放';
-      showInlineResult(resultDisplay, '已启动循环播放，钢琴音和唱名会同步播放', 'success');
+      showInlineResult(resultDisplay, '已启动循环播放，唱名会跟随目标音高', 'success');
       updatePlaybackState();
     } catch (error) {
       debugError('生成自动旋律训练音频失败', error);

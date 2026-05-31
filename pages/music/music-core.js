@@ -131,12 +131,12 @@ const AUTO_MELODY_BATCH_ROUNDS = 20;
 const AUTO_MELODY_LEAD_IN_SECONDS = 0.4;
 const AUTO_MELODY_NOTE_SECONDS = 0.72;
 const AUTO_MELODY_NOTE_STEP_SECONDS = 0.84;
-const AUTO_ANSWER_NOTE_SECONDS = 0.48;
-const AUTO_ANSWER_NOTE_STEP_SECONDS = 0.6;
+const AUTO_ANSWER_NOTE_SECONDS = 1.15;
+const AUTO_ANSWER_NOTE_STEP_SECONDS = 1.5;
 const AUTO_ANSWER_START_OFFSET_SECONDS = 0.24;
 const AUTO_SOLFEGE_TTS_SECONDS = 1.5;
 const AUTO_SOLFEGE_TTS_STEP_SECONDS = 1.5;
-const AUTO_SOLFEGE_TTS_START_OFFSET_SECONDS = 0.28;
+const AUTO_SOLFEGE_TTS_START_OFFSET_SECONDS = 0.06;
 const AUTO_ROUND_GAP_SECONDS = 1.1;
 const INTERVAL_SEMITONE_NAMES = {
   0: '同音',
@@ -767,14 +767,15 @@ function createAutoMelodySession(options) {
       getSequenceDuration(melody.length, AUTO_MELODY_NOTE_STEP_SECONDS, AUTO_MELODY_NOTE_SECONDS);
     const answerRevealTime = melodyEnd + answerDelay;
     const answerStart = answerRevealTime + AUTO_ANSWER_START_OFFSET_SECONDS;
-    const answerEnd =
+    const answerToneEnd =
       answerStart +
       getSequenceDuration(melody.length, AUTO_ANSWER_NOTE_STEP_SECONDS, AUTO_ANSWER_NOTE_SECONDS);
-    const speechStart = answerEnd + AUTO_SOLFEGE_TTS_START_OFFSET_SECONDS;
+    const speechStart = answerStart + AUTO_SOLFEGE_TTS_START_OFFSET_SECONDS;
     const speechEnd =
       speechStart +
       getSequenceDuration(melody.length, AUTO_SOLFEGE_TTS_STEP_SECONDS, AUTO_SOLFEGE_TTS_SECONDS);
-    const endTime = speechEnd + AUTO_ROUND_GAP_SECONDS;
+    const answerEnd = Math.max(answerToneEnd, speechEnd);
+    const endTime = answerEnd + AUTO_ROUND_GAP_SECONDS;
 
     rounds.push({
       index,
@@ -970,7 +971,7 @@ async function createAutoMelodyAudioBlob(session) {
       round.answerStart,
       AUTO_ANSWER_NOTE_STEP_SECONDS,
       AUTO_ANSWER_NOTE_SECONDS,
-      0.58
+      0.42
     );
     mixSolfegeSequence(samples, sampleRate, solfegeBuffers, round.melody, round.speechStart, 0.92);
   });
@@ -2095,7 +2096,7 @@ function initAutoMelodyPracticeListeners() {
       updateMediaSession();
       await audioElement.play();
       buildPlayBtn.textContent = '停止播放';
-      showInlineResult(resultDisplay, '已启动循环播放，音频内含唱名答案', 'success');
+      showInlineResult(resultDisplay, '已启动循环播放，唱名会同步对应音高', 'success');
       updatePlaybackState();
     } catch (error) {
       debugError('生成自动旋律训练音频失败', error);

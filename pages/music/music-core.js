@@ -134,19 +134,17 @@ const AUTO_MELODY_NOTE_STEP_SECONDS = 0.84;
 const AUTO_ANSWER_NOTE_SECONDS = 0.96;
 const AUTO_ANSWER_NOTE_STEP_SECONDS = 1;
 const AUTO_ANSWER_START_OFFSET_SECONDS = 0.24;
-const AUTO_SOLFEGE_TTS_SECONDS = 1.2;
-const AUTO_SOLFEGE_TTS_STEP_SECONDS = 1;
-const AUTO_SOLFEGE_TTS_START_OFFSET_SECONDS = 0;
+const AUTO_SOLFEGE_VOICE_SECONDS = 0.9;
+const AUTO_SOLFEGE_VOICE_STEP_SECONDS = 1;
+const AUTO_SOLFEGE_VOICE_START_OFFSET_SECONDS = 0.02;
 const AUTO_MELODY_NOTE_GAIN = 0.82;
 const AUTO_ANSWER_PIANO_GAIN = 0.78;
 const AUTO_ANSWER_PIANO_BODY_GAIN = 0.78;
 const AUTO_ANSWER_PIANO_BODY_START_SECONDS = 0.12;
 const AUTO_ANSWER_PIANO_BODY_FADE_SECONDS = 0.22;
-const AUTO_ANSWER_PIANO_PAN = -0.22;
-const AUTO_SOLFEGE_TTS_GAIN = 0.48;
-const AUTO_SOLFEGE_TTS_PAN = 0.08;
-const AUTO_SOLFEGE_PITCH_TONE_GAIN = 0.22;
-const AUTO_SOLFEGE_PITCH_TONE_PAN = 0.06;
+const AUTO_ANSWER_PIANO_PAN = -0.04;
+const AUTO_SOLFEGE_VOICE_GAIN = 0.44;
+const AUTO_SOLFEGE_VOICE_PAN = 0;
 const AUTO_ROUND_GAP_SECONDS = 1.1;
 const INTERVAL_SEMITONE_NAMES = {
   0: '同音',
@@ -192,12 +190,64 @@ const SOLFEGE_DISPLAY_NAMES = {
   'A#': '升la',
   B: 'si',
 };
-const SOLFEGE_TTS_ASSET_VERSION = 'mixed-solfege-4';
+const SOLFEGE_VOWEL_FORMANTS = {
+  a: [
+    [760, 170, 1],
+    [1180, 220, 0.62],
+    [2600, 420, 0.28],
+  ],
+  e: [
+    [520, 140, 0.9],
+    [1850, 330, 0.72],
+    [2550, 380, 0.26],
+  ],
+  i: [
+    [300, 110, 1],
+    [2200, 360, 0.82],
+    [3100, 430, 0.34],
+  ],
+  o: [
+    [500, 150, 1],
+    [920, 210, 0.7],
+    [2600, 420, 0.24],
+  ],
+  u: [
+    [340, 130, 1],
+    [1050, 260, 0.48],
+    [2400, 420, 0.22],
+  ],
+  ui: [
+    [360, 130, 1],
+    [1700, 360, 0.64],
+    [2800, 420, 0.28],
+  ],
+  eng: [
+    [480, 150, 0.92],
+    [1650, 320, 0.62],
+    [2500, 420, 0.24],
+  ],
+};
+const SOLFEGE_VOICE_PROFILES = {
+  C: { vowel: 'o', consonant: 'd', consonantSeconds: 0.05, noiseGain: 0.1, seed: 1 },
+  D: { vowel: 'ui', consonant: 'r', consonantSeconds: 0.07, noiseGain: 0.035, seed: 2 },
+  E: { vowel: 'i', consonant: 'm', consonantSeconds: 0.09, noiseGain: 0.012, seed: 3 },
+  F: { vowel: 'a', consonant: 'f', consonantSeconds: 0.08, noiseGain: 0.17, seed: 4 },
+  G: { vowel: 'o', consonant: 's', consonantSeconds: 0.08, noiseGain: 0.16, seed: 5 },
+  A: { vowel: 'a', consonant: 'l', consonantSeconds: 0.06, noiseGain: 0.018, seed: 6 },
+  B: { vowel: 'i', consonant: 'x', consonantSeconds: 0.08, noiseGain: 0.14, seed: 7 },
+};
+const SOLFEGE_SHARP_PREFIX_PROFILE = {
+  vowel: 'eng',
+  consonant: 'sh',
+  consonantSeconds: 0.08,
+  noiseGain: 0.16,
+  seed: 8,
+};
 
 // 音频上下文和音频缓存
 let audioContext = null;
 const audioBufferCache = {};
-const solfegeAudioBufferCache = {};
+const pitchedSolfegeSampleCache = {};
 let currentPlayingSource = null;
 
 // 调试模式
@@ -319,11 +369,6 @@ function getAudioPath(note) {
   }
 
   return `${window.location.origin}${getAppRootPath()}audio/piano/${fileNote}.mp3`;
-}
-
-function getSolfegeTtsPath(pitchName) {
-  const fileName = pitchName.replace('#', 's');
-  return `${window.location.origin}${getAppRootPath()}audio/solfege-tts/${fileName}.mp3?v=${SOLFEGE_TTS_ASSET_VERSION}`;
 }
 
 // 加载音频文件
@@ -781,10 +826,14 @@ function createAutoMelodySession(options) {
     const answerToneEnd =
       answerStart +
       getSequenceDuration(melody.length, AUTO_ANSWER_NOTE_STEP_SECONDS, AUTO_ANSWER_NOTE_SECONDS);
-    const speechStart = answerStart + AUTO_SOLFEGE_TTS_START_OFFSET_SECONDS;
+    const speechStart = answerStart + AUTO_SOLFEGE_VOICE_START_OFFSET_SECONDS;
     const speechEnd =
       speechStart +
-      getSequenceDuration(melody.length, AUTO_SOLFEGE_TTS_STEP_SECONDS, AUTO_SOLFEGE_TTS_SECONDS);
+      getSequenceDuration(
+        melody.length,
+        AUTO_SOLFEGE_VOICE_STEP_SECONDS,
+        AUTO_SOLFEGE_VOICE_SECONDS
+      );
     const answerEnd = Math.max(answerToneEnd, speechEnd);
     const endTime = answerEnd + AUTO_ROUND_GAP_SECONDS;
 
@@ -825,21 +874,6 @@ async function getTrainingAudioBuffer(note) {
     audioBufferCache[note] = synthBuffer;
     return synthBuffer;
   }
-}
-
-async function getSolfegeAudioBuffer(pitchName) {
-  if (!initAudioContext()) throw new Error('AudioContext 初始化失败');
-  if (solfegeAudioBufferCache[pitchName]) return solfegeAudioBufferCache[pitchName];
-
-  const response = await fetch(getSolfegeTtsPath(pitchName));
-  if (!response.ok) {
-    throw new Error(`唱名语音资源加载失败: ${pitchName}`);
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
-  const buffer = await audioContext.decodeAudioData(arrayBuffer);
-  solfegeAudioBufferCache[pitchName] = buffer;
-  return buffer;
 }
 
 function createMixTarget(frameCount) {
@@ -899,15 +933,6 @@ function getBodyEnvelopeMultiplier(index, sampleRate, options) {
   return 1 - (1 - bodyGain) * progress;
 }
 
-function getMonoBufferSample(sourceBuffer, index) {
-  const safeIndex = Math.max(0, Math.min(sourceBuffer.length - 1, index));
-  let value = 0;
-  for (let channel = 0; channel < sourceBuffer.numberOfChannels; channel++) {
-    value += sourceBuffer.getChannelData(channel)[safeIndex] / sourceBuffer.numberOfChannels;
-  }
-  return value;
-}
-
 function mixAudioBuffer(target, sampleRate, sourceBuffer, startTime, duration, options = {}) {
   const settings = typeof options === 'number' ? { gain: options } : options;
   const gain = settings.gain ?? 0.75;
@@ -940,47 +965,6 @@ function mixAudioBuffer(target, sampleRate, sourceBuffer, startTime, duration, o
   }
 }
 
-function mixSolfegePitchTone(target, sampleRate, sourceBuffer, note, startTime, duration, options) {
-  const frequency = noteToFrequency(note);
-  if (!frequency) return;
-
-  const startSample = Math.max(0, Math.floor(startTime * sampleRate));
-  const maxSamples = Math.min(
-    Math.floor(duration * sampleRate),
-    sourceBuffer.length,
-    target.length - startSample
-  );
-  const gain = options.gain ?? 0.2;
-  const pan = options.pan ?? 0;
-  const fadeInSamples = Math.max(1, Math.floor(0.035 * sampleRate));
-  const fadeOutSamples = Math.max(1, Math.floor(0.08 * sampleRate));
-  const phaseStep = (Math.PI * 2 * frequency) / sampleRate;
-  const attack = 0.08;
-  const release = 0.004;
-  let phase = 0;
-  let envelope = 0;
-
-  for (let i = 0; i < maxSamples; i++) {
-    const speechLevel = Math.abs(getMonoBufferSample(sourceBuffer, i));
-    envelope += (speechLevel - envelope) * (speechLevel > envelope ? attack : release);
-
-    const fadeIn = Math.min(1, i / fadeInSamples);
-    const fadeOut = Math.min(1, (maxSamples - i) / fadeOutSamples);
-    const gate = Math.min(1, envelope * 9);
-    const vowelTone =
-      (Math.sin(phase) + 0.32 * Math.sin(phase * 2) + 0.12 * Math.sin(phase * 3)) / 1.44;
-
-    writeMixSample(
-      target,
-      startSample + i,
-      vowelTone * gate * gain * Math.min(fadeIn, fadeOut),
-      pan
-    );
-    phase += phaseStep;
-    if (phase > Math.PI * 2) phase -= Math.PI * 2;
-  }
-}
-
 function mixNoteSequence(
   target,
   sampleRate,
@@ -998,32 +982,221 @@ function mixNoteSequence(
   });
 }
 
-function mixSolfegeSequence(target, sampleRate, buffers, melody, startTime, options) {
-  melody.forEach((note, index) => {
-    const pitchName = getSolfegePitchName(note);
-    const buffer = buffers[pitchName];
-    if (!buffer) {
-      throw new Error(`唱名语音资源未加载: ${pitchName}`);
-    }
-    mixAudioBuffer(
-      target,
+function getSolfegeVoiceProfile(note) {
+  const pitchName = getSolfegePitchName(note);
+  const basePitchName = pitchName.replace('#', '');
+  const baseProfile = SOLFEGE_VOICE_PROFILES[basePitchName];
+  if (!baseProfile) {
+    throw new Error(`无法生成唱名声源: ${note}`);
+  }
+
+  return {
+    pitchName,
+    baseProfile,
+    hasSharpPrefix: pitchName.includes('#'),
+  };
+}
+
+function getFormantWeight(frequency, formants) {
+  return formants.reduce((weight, [center, bandwidth, level]) => {
+    const distance = (frequency - center) / bandwidth;
+    return weight + level * Math.exp(-0.5 * distance * distance);
+  }, 0.03);
+}
+
+function getVoiceHarmonics(frequency, sampleRate, profile) {
+  const formants = SOLFEGE_VOWEL_FORMANTS[profile.vowel] || SOLFEGE_VOWEL_FORMANTS.a;
+  const maxHarmonic = Math.max(1, Math.min(28, Math.floor((sampleRate * 0.45) / frequency)));
+  const harmonics = [];
+  let totalWeight = 0;
+
+  for (let harmonic = 1; harmonic <= maxHarmonic; harmonic++) {
+    const harmonicFrequency = frequency * harmonic;
+    const formantWeight = getFormantWeight(harmonicFrequency, formants);
+    const pitchCore = harmonic === 1 ? 0.36 : harmonic === 2 ? 0.18 : 0;
+    const weight = (formantWeight + pitchCore) / Math.pow(harmonic, 0.72);
+    totalWeight += weight;
+    harmonics.push({
+      harmonic,
+      phase: (profile.seed || 1) * harmonic * 0.41,
+      weight,
+    });
+  }
+
+  const normalizer = totalWeight || 1;
+  return harmonics.map((harmonic) => ({
+    ...harmonic,
+    weight: harmonic.weight / normalizer,
+  }));
+}
+
+function getDeterministicNoise(index, seed) {
+  const value = Math.sin((index + 1) * (12.9898 + seed * 0.137) + seed * 78.233) * 43758.5453;
+  return (value - Math.floor(value)) * 2 - 1;
+}
+
+function getConsonantNoise(profile, index, sampleRate) {
+  const consonantSeconds = profile.consonantSeconds || 0;
+  if (consonantSeconds <= 0) return 0;
+
+  const time = index / sampleRate;
+  if (time > consonantSeconds) return 0;
+
+  const progress = Math.max(0, Math.min(1, time / consonantSeconds));
+  const seed = profile.seed || 1;
+  const noise = getDeterministicNoise(index, seed);
+  const previousNoise = getDeterministicNoise(index - 1, seed);
+  const isBrightConsonant = ['f', 's', 'sh', 'x'].includes(profile.consonant);
+  const shapedNoise = isBrightConsonant
+    ? noise - previousNoise * 0.68
+    : noise * 0.7 + previousNoise * 0.3;
+  const plosiveBoost = profile.consonant === 'd' ? Math.exp(-progress * 5.5) : 1;
+  const envelope = Math.sin(Math.PI * progress) * Math.pow(1 - progress, 0.55) * plosiveBoost;
+
+  return shapedNoise * envelope * (profile.noiseGain || 0);
+}
+
+function getVoiceEnvelope(index, sampleRate, sampleCount, profile) {
+  const time = index / sampleRate;
+  const remainingTime = (sampleCount - index) / sampleRate;
+  const attackSeconds = Math.max(0.018, (profile.consonantSeconds || 0.04) * 0.65);
+  const releaseSeconds = Math.max(0.08, Math.min(0.16, sampleCount / sampleRate / 5));
+  const attack = Math.min(1, time / attackSeconds);
+  const release = Math.min(1, remainingTime / releaseSeconds);
+  const consonantSeconds = profile.consonantSeconds || 0;
+  const vowelOpen =
+    consonantSeconds > 0 && time < consonantSeconds ? 0.42 + 0.58 * (time / consonantSeconds) : 1;
+
+  return Math.min(attack, release) * vowelOpen;
+}
+
+function getVoicedSample(harmonics, frequency, time, duration, profile) {
+  const vibratoStart = Math.max(0.18, duration * 0.28);
+  const vibratoDepth = time > vibratoStart ? 0.0025 : 0;
+  const vibrato = 1 + vibratoDepth * Math.sin(2 * Math.PI * 5.2 * (time - vibratoStart));
+  const onsetBend = 1 - 0.012 * Math.exp(-time / 0.055);
+  const phase = 2 * Math.PI * frequency * time * vibrato * onsetBend;
+
+  let value = 0;
+  harmonics.forEach((harmonic) => {
+    value += Math.sin(phase * harmonic.harmonic + harmonic.phase) * harmonic.weight;
+  });
+
+  const nasalBlend =
+    profile.consonant === 'm' && time < (profile.consonantSeconds || 0)
+      ? Math.sin(2 * Math.PI * frequency * time) * 0.2
+      : 0;
+
+  return value + nasalBlend;
+}
+
+function mixSungSyllableSamples(samples, sampleRate, frequency, startTime, duration, profile) {
+  const startSample = Math.max(0, Math.floor(startTime * sampleRate));
+  const sampleCount = Math.min(Math.floor(duration * sampleRate), samples.length - startSample);
+  if (sampleCount <= 0) return;
+
+  const harmonics = getVoiceHarmonics(frequency, sampleRate, profile);
+
+  for (let i = 0; i < sampleCount; i++) {
+    const time = i / sampleRate;
+    const envelope = getVoiceEnvelope(i, sampleRate, sampleCount, profile);
+    const voiced = getVoicedSample(harmonics, frequency, time, duration, profile);
+    const consonantNoise = getConsonantNoise(profile, i, sampleRate);
+    samples[startSample + i] += (voiced * envelope + consonantNoise) * 0.92;
+  }
+}
+
+function normalizeSolfegeSamples(samples) {
+  let peak = 0;
+  for (let i = 0; i < samples.length; i++) {
+    peak = Math.max(peak, Math.abs(samples[i]));
+  }
+
+  if (peak <= 0) return samples;
+
+  const scale = Math.min(1.8, 0.82 / peak);
+  for (let i = 0; i < samples.length; i++) {
+    samples[i] *= scale;
+  }
+  return samples;
+}
+
+function createPitchedSolfegeSamples(note, sampleRate, duration) {
+  const normalizedNote = normalizeNoteName(note) || note;
+  const frequency = noteToFrequency(normalizedNote);
+  if (!frequency) {
+    throw new Error(`无法为唱名生成目标音高: ${note}`);
+  }
+
+  const cacheKey = `${normalizedNote}:${sampleRate}:${duration}`;
+  if (pitchedSolfegeSampleCache[cacheKey]) {
+    return pitchedSolfegeSampleCache[cacheKey];
+  }
+
+  const { baseProfile, hasSharpPrefix } = getSolfegeVoiceProfile(normalizedNote);
+  const samples = new Float32Array(Math.ceil(duration * sampleRate));
+
+  if (hasSharpPrefix) {
+    const prefixDuration = Math.min(0.3, duration * 0.36);
+    const mainStart = prefixDuration * 0.82;
+    mixSungSyllableSamples(
+      samples,
       sampleRate,
-      buffer,
-      startTime + index * AUTO_SOLFEGE_TTS_STEP_SECONDS,
-      Math.min(AUTO_SOLFEGE_TTS_SECONDS, buffer.duration),
-      options
+      frequency,
+      0,
+      prefixDuration,
+      SOLFEGE_SHARP_PREFIX_PROFILE
     );
-    mixSolfegePitchTone(
+    mixSungSyllableSamples(
+      samples,
+      sampleRate,
+      frequency,
+      mainStart,
+      duration - mainStart,
+      baseProfile
+    );
+  } else {
+    mixSungSyllableSamples(samples, sampleRate, frequency, 0, duration, baseProfile);
+  }
+
+  pitchedSolfegeSampleCache[cacheKey] = normalizeSolfegeSamples(samples);
+  return pitchedSolfegeSampleCache[cacheKey];
+}
+
+function mixMonoSamples(target, sampleRate, sourceSamples, startTime, duration, options = {}) {
+  const gain = options.gain ?? 0.75;
+  const pan = options.pan ?? 0;
+  const startSample = Math.max(0, Math.floor(startTime * sampleRate));
+  const maxSamples = Math.min(
+    Math.floor(duration * sampleRate),
+    sourceSamples.length,
+    target.length - startSample
+  );
+  const fadeInSamples = Math.max(1, Math.floor((options.fadeInSeconds ?? 0.006) * sampleRate));
+  const fadeOutSamples = Math.max(1, Math.floor((options.fadeOutSeconds ?? 0.045) * sampleRate));
+
+  for (let i = 0; i < maxSamples; i++) {
+    const fadeIn = Math.min(1, i / fadeInSamples);
+    const fadeOut = Math.min(1, (maxSamples - i) / fadeOutSamples);
+    writeMixSample(
+      target,
+      startSample + i,
+      sourceSamples[i] * gain * Math.min(fadeIn, fadeOut),
+      pan
+    );
+  }
+}
+
+function mixPitchedSolfegeSequence(target, sampleRate, melody, startTime, options) {
+  melody.forEach((note, index) => {
+    const samples = createPitchedSolfegeSamples(note, sampleRate, AUTO_SOLFEGE_VOICE_SECONDS);
+    mixMonoSamples(
       target,
       sampleRate,
-      buffer,
-      note,
-      startTime + index * AUTO_SOLFEGE_TTS_STEP_SECONDS,
-      Math.min(AUTO_SOLFEGE_TTS_SECONDS, buffer.duration),
-      {
-        gain: AUTO_SOLFEGE_PITCH_TONE_GAIN,
-        pan: AUTO_SOLFEGE_PITCH_TONE_PAN,
-      }
+      samples,
+      startTime + index * AUTO_SOLFEGE_VOICE_STEP_SECONDS,
+      AUTO_SOLFEGE_VOICE_SECONDS,
+      options
     );
   });
 }
@@ -1077,19 +1250,10 @@ async function createAutoMelodyAudioBlob(session) {
   }
 
   const uniqueNotes = [...new Set(session.rounds.flatMap((round) => round.melody))];
-  const uniqueSolfegePitchNames = [
-    ...new Set(uniqueNotes.map((note) => getSolfegePitchName(note))),
-  ];
   const buffers = {};
-  const solfegeBuffers = {};
   await Promise.all(
     uniqueNotes.map(async (note) => {
       buffers[note] = await getTrainingAudioBuffer(note);
-    })
-  );
-  await Promise.all(
-    uniqueSolfegePitchNames.map(async (pitchName) => {
-      solfegeBuffers[pitchName] = await getSolfegeAudioBuffer(pitchName);
     })
   );
 
@@ -1123,9 +1287,9 @@ async function createAutoMelodyAudioBlob(session) {
         bodyFadeSeconds: AUTO_ANSWER_PIANO_BODY_FADE_SECONDS,
       }
     );
-    mixSolfegeSequence(samples, sampleRate, solfegeBuffers, round.melody, round.speechStart, {
-      gain: AUTO_SOLFEGE_TTS_GAIN,
-      pan: AUTO_SOLFEGE_TTS_PAN,
+    mixPitchedSolfegeSequence(samples, sampleRate, round.melody, round.speechStart, {
+      gain: AUTO_SOLFEGE_VOICE_GAIN,
+      pan: AUTO_SOLFEGE_VOICE_PAN,
       fadeInSeconds: 0.006,
       fadeOutSeconds: 0.05,
     });
@@ -2246,7 +2410,7 @@ function initAutoMelodyPracticeListeners() {
       updateMediaSession();
       await audioElement.play();
       buildPlayBtn.textContent = '停止播放';
-      showInlineResult(resultDisplay, '已启动循环播放，唱名会跟随目标音高', 'success');
+      showInlineResult(resultDisplay, '已启动循环播放，唱名会按目标音高唱出', 'success');
       updatePlaybackState();
     } catch (error) {
       debugError('生成自动旋律训练音频失败', error);

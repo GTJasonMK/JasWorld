@@ -136,7 +136,15 @@ const AUTO_ANSWER_NOTE_STEP_SECONDS = 1.5;
 const AUTO_ANSWER_START_OFFSET_SECONDS = 0.24;
 const AUTO_SOLFEGE_TTS_SECONDS = 1.5;
 const AUTO_SOLFEGE_TTS_STEP_SECONDS = 1.5;
-const AUTO_SOLFEGE_TTS_START_OFFSET_SECONDS = 0.06;
+const AUTO_SOLFEGE_TTS_START_OFFSET_SECONDS = 0;
+const AUTO_MELODY_NOTE_GAIN = 0.82;
+const AUTO_ANSWER_PIANO_GAIN = 0.48;
+const AUTO_ANSWER_PIANO_BODY_GAIN = 0.58;
+const AUTO_ANSWER_PIANO_BODY_START_SECONDS = 0.12;
+const AUTO_ANSWER_PIANO_BODY_FADE_SECONDS = 0.28;
+const AUTO_ANSWER_PIANO_PAN = -0.22;
+const AUTO_SOLFEGE_TTS_GAIN = 0.9;
+const AUTO_SOLFEGE_TTS_PAN = 0.08;
 const AUTO_ROUND_GAP_SECONDS = 1.1;
 const INTERVAL_SEMITONE_NAMES = {
   0: '同音',
@@ -831,7 +839,67 @@ async function getSolfegeAudioBuffer(pitchName) {
   return buffer;
 }
 
-function mixAudioBuffer(target, sampleRate, sourceBuffer, startTime, duration, gain = 0.75) {
+function createMixTarget(frameCount) {
+  return {
+    left: new Float32Array(frameCount),
+    right: new Float32Array(frameCount),
+    length: frameCount,
+  };
+}
+
+function getMixChannels(target) {
+  if (target.left && target.right) {
+    return [target.left, target.right];
+  }
+  return [target];
+}
+
+function writeMixSample(target, index, value, pan = 0) {
+  if (!target.left || !target.right) {
+    target[index] += value;
+    return;
+  }
+
+  const safePan = Math.max(-1, Math.min(1, pan));
+  const angle = (safePan + 1) * (Math.PI / 4);
+  target.left[index] += value * Math.cos(angle);
+  target.right[index] += value * Math.sin(angle);
+}
+
+function scaleMixTarget(target, scale) {
+  getMixChannels(target).forEach((channel) => {
+    for (let i = 0; i < channel.length; i++) {
+      channel[i] *= scale;
+    }
+  });
+}
+
+function getMixPeak(target) {
+  let peak = 0;
+  getMixChannels(target).forEach((channel) => {
+    for (let i = 0; i < channel.length; i++) {
+      peak = Math.max(peak, Math.abs(channel[i]));
+    }
+  });
+  return peak;
+}
+
+function getBodyEnvelopeMultiplier(index, sampleRate, options) {
+  const bodyGain = options.bodyGain ?? 1;
+  if (bodyGain >= 1) return 1;
+
+  const startSample = Math.floor((options.bodyStartSeconds || 0) * sampleRate);
+  if (index <= startSample) return 1;
+
+  const fadeSamples = Math.max(1, Math.floor((options.bodyFadeSeconds || 0.001) * sampleRate));
+  const progress = Math.min(1, (index - startSample) / fadeSamples);
+  return 1 - (1 - bodyGain) * progress;
+}
+
+function mixAudioBuffer(target, sampleRate, sourceBuffer, startTime, duration, options = {}) {
+  const settings = typeof options === 'number' ? { gain: options } : options;
+  const gain = settings.gain ?? 0.75;
+  const pan = settings.pan ?? 0;
   const startSample = Math.max(0, Math.floor(startTime * sampleRate));
   const maxSamples = Math.min(
     Math.floor(duration * sampleRate),
@@ -839,8 +907,8 @@ function mixAudioBuffer(target, sampleRate, sourceBuffer, startTime, duration, g
     target.length - startSample
   );
   const channelCount = sourceBuffer.numberOfChannels;
-  const fadeInSamples = Math.max(1, Math.floor(0.018 * sampleRate));
-  const fadeOutSamples = Math.max(1, Math.floor(0.06 * sampleRate));
+  const fadeInSamples = Math.max(1, Math.floor((settings.fadeInSeconds ?? 0.018) * sampleRate));
+  const fadeOutSamples = Math.max(1, Math.floor((settings.fadeOutSeconds ?? 0.06) * sampleRate));
 
   for (let i = 0; i < maxSamples; i++) {
     let value = 0;
@@ -850,7 +918,13 @@ function mixAudioBuffer(target, sampleRate, sourceBuffer, startTime, duration, g
 
     const fadeIn = Math.min(1, i / fadeInSamples);
     const fadeOut = Math.min(1, (maxSamples - i) / fadeOutSamples);
-    target[startSample + i] += value * gain * Math.min(fadeIn, fadeOut);
+    const bodyEnvelope = getBodyEnvelopeMultiplier(i, sampleRate, settings);
+    writeMixSample(
+      target,
+      startSample + i,
+      value * gain * Math.min(fadeIn, fadeOut) * bodyEnvelope,
+      pan
+    );
   }
 }
 
@@ -871,7 +945,7 @@ function mixNoteSequence(
   });
 }
 
-function mixSolfegeSequence(target, sampleRate, buffers, melody, startTime, gain) {
+function mixSolfegeSequence(target, sampleRate, buffers, melody, startTime, options) {
   melody.forEach((note, index) => {
     const pitchName = getSolfegePitchName(note);
     const buffer = buffers[pitchName];
@@ -884,15 +958,18 @@ function mixSolfegeSequence(target, sampleRate, buffers, melody, startTime, gain
       buffer,
       startTime + index * AUTO_SOLFEGE_TTS_STEP_SECONDS,
       Math.min(AUTO_SOLFEGE_TTS_SECONDS, buffer.duration),
-      gain
+      options
     );
   });
 }
 
 function encodeWav(samples, sampleRate) {
   const bytesPerSample = 2;
-  const blockAlign = bytesPerSample;
-  const dataSize = samples.length * bytesPerSample;
+  const channels = getMixChannels(samples);
+  const channelCount = channels.length;
+  const frameCount = samples.length;
+  const blockAlign = bytesPerSample * channelCount;
+  const dataSize = frameCount * blockAlign;
   const buffer = new ArrayBuffer(44 + dataSize);
   const view = new DataView(buffer);
 
@@ -908,7 +985,7 @@ function encodeWav(samples, sampleRate) {
   writeString(12, 'fmt ');
   view.setUint32(16, 16, true);
   view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
+  view.setUint16(22, channelCount, true);
   view.setUint32(24, sampleRate, true);
   view.setUint32(28, sampleRate * blockAlign, true);
   view.setUint16(32, blockAlign, true);
@@ -917,10 +994,12 @@ function encodeWav(samples, sampleRate) {
   view.setUint32(40, dataSize, true);
 
   let offset = 44;
-  for (let i = 0; i < samples.length; i++) {
-    const sample = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
-    offset += 2;
+  for (let i = 0; i < frameCount; i++) {
+    for (let channel = 0; channel < channelCount; channel++) {
+      const sample = Math.max(-1, Math.min(1, channels[channel][i]));
+      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+      offset += 2;
+    }
   }
 
   return buffer;
@@ -950,7 +1029,7 @@ async function createAutoMelodyAudioBlob(session) {
   );
 
   const sampleRate = audioContext.sampleRate;
-  const samples = new Float32Array(Math.ceil(session.duration * sampleRate));
+  const samples = createMixTarget(Math.ceil(session.duration * sampleRate));
 
   session.rounds.forEach((round) => {
     mixNoteSequence(
@@ -961,7 +1040,7 @@ async function createAutoMelodyAudioBlob(session) {
       round.melodyStart,
       AUTO_MELODY_NOTE_STEP_SECONDS,
       AUTO_MELODY_NOTE_SECONDS,
-      0.82
+      AUTO_MELODY_NOTE_GAIN
     );
     mixNoteSequence(
       samples,
@@ -971,20 +1050,26 @@ async function createAutoMelodyAudioBlob(session) {
       round.answerStart,
       AUTO_ANSWER_NOTE_STEP_SECONDS,
       AUTO_ANSWER_NOTE_SECONDS,
-      0.42
+      {
+        gain: AUTO_ANSWER_PIANO_GAIN,
+        pan: AUTO_ANSWER_PIANO_PAN,
+        bodyGain: AUTO_ANSWER_PIANO_BODY_GAIN,
+        bodyStartSeconds: AUTO_ANSWER_PIANO_BODY_START_SECONDS,
+        bodyFadeSeconds: AUTO_ANSWER_PIANO_BODY_FADE_SECONDS,
+      }
     );
-    mixSolfegeSequence(samples, sampleRate, solfegeBuffers, round.melody, round.speechStart, 0.92);
+    mixSolfegeSequence(samples, sampleRate, solfegeBuffers, round.melody, round.speechStart, {
+      gain: AUTO_SOLFEGE_TTS_GAIN,
+      pan: AUTO_SOLFEGE_TTS_PAN,
+      fadeInSeconds: 0.006,
+      fadeOutSeconds: 0.05,
+    });
   });
 
-  let peak = 0;
-  for (let i = 0; i < samples.length; i++) {
-    peak = Math.max(peak, Math.abs(samples[i]));
-  }
+  const peak = getMixPeak(samples);
   if (peak > 0.95) {
     const scale = 0.95 / peak;
-    for (let i = 0; i < samples.length; i++) {
-      samples[i] *= scale;
-    }
+    scaleMixTarget(samples, scale);
   }
 
   return new Blob([encodeWav(samples, sampleRate)], { type: 'audio/wav' });
@@ -2096,7 +2181,7 @@ function initAutoMelodyPracticeListeners() {
       updateMediaSession();
       await audioElement.play();
       buildPlayBtn.textContent = '停止播放';
-      showInlineResult(resultDisplay, '已启动循环播放，唱名会同步对应音高', 'success');
+      showInlineResult(resultDisplay, '已启动循环播放，钢琴音和唱名会同步播放', 'success');
       updatePlaybackState();
     } catch (error) {
       debugError('生成自动旋律训练音频失败', error);

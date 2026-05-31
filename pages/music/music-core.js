@@ -102,6 +102,99 @@ function renderRangeOptions(selectedIndex = 0) {
   }).join('');
 }
 
+function normalizeAutoSolfegeClarity(value = AUTO_SOLFEGE_CLARITY_DEFAULT) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return AUTO_SOLFEGE_CLARITY_DEFAULT;
+  return Math.max(AUTO_SOLFEGE_CLARITY_MIN, Math.min(AUTO_SOLFEGE_CLARITY_MAX, Math.round(parsed)));
+}
+
+function getAutoSolfegeClarityScale(clarity, lowScale, highScale) {
+  const value = normalizeAutoSolfegeClarity(clarity) / AUTO_SOLFEGE_CLARITY_MAX;
+  const center = AUTO_SOLFEGE_CLARITY_DEFAULT / AUTO_SOLFEGE_CLARITY_MAX;
+  if (value <= center) {
+    return lowScale + (1 - lowScale) * (value / center);
+  }
+  return 1 + (highScale - 1) * ((value - center) / (1 - center));
+}
+
+function getAutoSolfegeTimbrePreset(
+  value = AUTO_SOLFEGE_DEFAULT_TIMBRE,
+  clarity = AUTO_SOLFEGE_CLARITY_DEFAULT
+) {
+  const basePreset =
+    AUTO_SOLFEGE_TIMBRE_PRESETS[value] || AUTO_SOLFEGE_TIMBRE_PRESETS[AUTO_SOLFEGE_DEFAULT_TIMBRE];
+  const safeClarity = normalizeAutoSolfegeClarity(clarity);
+
+  return {
+    ...basePreset,
+    clarity: safeClarity,
+    usesSpeechGuide: basePreset.usesSpeechGuide !== false,
+    solfegeVoiceGain:
+      basePreset.solfegeVoiceGain * getAutoSolfegeClarityScale(safeClarity, 0.46, 1.72),
+    pianoBlend: basePreset.pianoBlend * getAutoSolfegeClarityScale(safeClarity, 0.42, 1.62),
+    pianoDirectGain:
+      basePreset.pianoDirectGain * getAutoSolfegeClarityScale(safeClarity, 1.12, 0.86),
+    synthBlend: basePreset.synthBlend * getAutoSolfegeClarityScale(safeClarity, 0.12, 1.45),
+    consonantGain: basePreset.consonantGain * getAutoSolfegeClarityScale(safeClarity, 0.72, 1.34),
+    speechEnvelopeAmount:
+      basePreset.speechEnvelopeAmount * getAutoSolfegeClarityScale(safeClarity, 0.5, 1.35),
+    speechDetailGain:
+      basePreset.speechDetailGain * getAutoSolfegeClarityScale(safeClarity, 0.08, 1.7),
+    speechPresenceGain:
+      basePreset.speechPresenceGain * getAutoSolfegeClarityScale(safeClarity, 0.36, 1.85),
+    speechVoiceLabelGain:
+      basePreset.speechVoiceLabelGain * getAutoSolfegeClarityScale(safeClarity, 0.28, 1.72),
+    speechConsonantBoost:
+      basePreset.speechConsonantBoost * getAutoSolfegeClarityScale(safeClarity, 0.65, 1.3),
+    speechBandAmount:
+      basePreset.speechBandAmount * getAutoSolfegeClarityScale(safeClarity, 0.28, 1.68),
+    speechPresenceScale:
+      basePreset.speechPresenceScale * getAutoSolfegeClarityScale(safeClarity, 0.82, 1.18),
+    speechDetailConsonantFocus:
+      basePreset.speechDetailConsonantFocus * getAutoSolfegeClarityScale(safeClarity, 0.72, 1.22),
+    normalizeTarget:
+      basePreset.normalizeTarget * getAutoSolfegeClarityScale(safeClarity, 0.76, 1.16),
+    normalizeMaxBoost:
+      basePreset.normalizeMaxBoost * getAutoSolfegeClarityScale(safeClarity, 0.86, 1.12),
+    voiceStartOffsetSeconds:
+      basePreset.voiceStartOffsetSeconds * getAutoSolfegeClarityScale(safeClarity, 1.16, 0.72),
+    formantStartSeconds:
+      basePreset.formantStartSeconds * getAutoSolfegeClarityScale(safeClarity, 1.18, 0.72),
+    speechBandStartSeconds:
+      basePreset.speechBandStartSeconds * getAutoSolfegeClarityScale(safeClarity, 1.18, 0.7),
+    synthStartSeconds:
+      basePreset.synthStartSeconds * getAutoSolfegeClarityScale(safeClarity, 1.2, 0.74),
+  };
+}
+
+function renderAutoSolfegeTimbreOptions(selectedValue = AUTO_SOLFEGE_DEFAULT_TIMBRE) {
+  const safeSelectedValue = AUTO_SOLFEGE_TIMBRE_PRESETS[selectedValue]
+    ? selectedValue
+    : AUTO_SOLFEGE_DEFAULT_TIMBRE;
+  return Object.entries(AUTO_SOLFEGE_TIMBRE_PRESETS)
+    .map(([value, preset]) => {
+      const selected = value === safeSelectedValue ? 'selected' : '';
+      return `<option value="${value}" ${selected}>${preset.label}</option>`;
+    })
+    .join('');
+}
+
+function getAutoAnswerModeConfig(value = AUTO_ANSWER_MODE_DEFAULT) {
+  return AUTO_ANSWER_MODES[value] || AUTO_ANSWER_MODES[AUTO_ANSWER_MODE_DEFAULT];
+}
+
+function renderAutoAnswerModeOptions(selectedValue = AUTO_ANSWER_MODE_DEFAULT) {
+  const safeSelectedValue = AUTO_ANSWER_MODES[selectedValue]
+    ? selectedValue
+    : AUTO_ANSWER_MODE_DEFAULT;
+  return Object.entries(AUTO_ANSWER_MODES)
+    .map(([value, mode]) => {
+      const selected = value === safeSelectedValue ? 'selected' : '';
+      return `<option value="${value}" ${selected}>${mode.label}</option>`;
+    })
+    .join('');
+}
+
 function renderStats(items) {
   return items
     .map(
@@ -131,21 +224,204 @@ const AUTO_MELODY_BATCH_ROUNDS = 20;
 const AUTO_MELODY_LEAD_IN_SECONDS = 0.4;
 const AUTO_MELODY_NOTE_SECONDS = 0.72;
 const AUTO_MELODY_NOTE_STEP_SECONDS = 0.84;
-const AUTO_ANSWER_NOTE_SECONDS = 0.96;
-const AUTO_ANSWER_NOTE_STEP_SECONDS = 1;
+const AUTO_ANSWER_NOTE_SECONDS = 0.86;
+const AUTO_ANSWER_NOTE_STEP_SECONDS = 0.92;
 const AUTO_ANSWER_START_OFFSET_SECONDS = 0.24;
-const AUTO_SOLFEGE_VOICE_SECONDS = 0.9;
-const AUTO_SOLFEGE_VOICE_STEP_SECONDS = 1;
-const AUTO_SOLFEGE_VOICE_START_OFFSET_SECONDS = 0.02;
+const AUTO_SOLFEGE_VOICE_SECONDS = 0.82;
+const AUTO_SOLFEGE_VOICE_STEP_SECONDS = 0.92;
+const AUTO_SOLFEGE_VOICE_START_OFFSET_SECONDS = 0.055;
 const AUTO_MELODY_NOTE_GAIN = 0.82;
-const AUTO_ANSWER_PIANO_GAIN = 0.78;
-const AUTO_ANSWER_PIANO_BODY_GAIN = 0.78;
-const AUTO_ANSWER_PIANO_BODY_START_SECONDS = 0.12;
-const AUTO_ANSWER_PIANO_BODY_FADE_SECONDS = 0.22;
-const AUTO_ANSWER_PIANO_PAN = -0.04;
-const AUTO_SOLFEGE_VOICE_GAIN = 0.44;
+const AUTO_ANSWER_PIANO_GAIN = 1;
+const AUTO_ANSWER_PIANO_BODY_GAIN = 0.7;
+const AUTO_ANSWER_PIANO_BODY_START_SECONDS = 0.075;
+const AUTO_ANSWER_PIANO_BODY_FADE_SECONDS = 0.18;
+const AUTO_ANSWER_PIANO_PAN = 0;
+const AUTO_SOLFEGE_VOICE_GAIN = 0.26;
 const AUTO_SOLFEGE_VOICE_PAN = 0;
-const AUTO_SOLFEGE_PIANO_BLEND = 0.58;
+const AUTO_SOLFEGE_PIANO_BLEND = 0.3;
+const AUTO_SOLFEGE_SYNTH_BLEND = 0.02;
+const AUTO_SOLFEGE_DRY_ATTACK_GAIN = 1.24;
+const AUTO_SOLFEGE_DRY_BODY_GAIN = 0.44;
+const AUTO_SOLFEGE_DRY_BODY_DECAY_SECONDS = 0.24;
+const AUTO_SOLFEGE_CONSONANT_GAIN = 1.38;
+const AUTO_SOLFEGE_SPEECH_ENVELOPE_AMOUNT = 0.3;
+const AUTO_SOLFEGE_SPEECH_DETAIL_GAIN = 0.026;
+const AUTO_SOLFEGE_SPEECH_CONSONANT_BOOST = 1;
+const AUTO_SOLFEGE_SPEECH_BAND_AMOUNT = 0.14;
+const AUTO_SOLFEGE_DEFAULT_TIMBRE = 'piano-clear';
+const AUTO_SOLFEGE_CLARITY_MIN = 0;
+const AUTO_SOLFEGE_CLARITY_MAX = 100;
+const AUTO_SOLFEGE_CLARITY_STEP = 5;
+const AUTO_SOLFEGE_CLARITY_DEFAULT = 25;
+const AUTO_ANSWER_MODE_DEFAULT = 'piano-first';
+const AUTO_ANSWER_MODES = {
+  'piano-first': {
+    label: '钢琴优先',
+    answerNoteSeconds: 0.92,
+    answerNoteStepSeconds: 1.08,
+    voiceSeconds: 0.78,
+    voiceStepSeconds: 1.08,
+    voiceStartOffsetSeconds: 0.1,
+    pianoGainScale: 1.06,
+    pianoBodyGainScale: 0.9,
+    solfegeGainScale: 0.86,
+    solfegeFadeInSeconds: 0.018,
+    solfegeFadeOutSeconds: 0.04,
+  },
+  blend: {
+    label: '融合',
+    answerNoteSeconds: AUTO_ANSWER_NOTE_SECONDS,
+    answerNoteStepSeconds: AUTO_ANSWER_NOTE_STEP_SECONDS,
+    voiceSeconds: AUTO_SOLFEGE_VOICE_SECONDS,
+    voiceStepSeconds: AUTO_SOLFEGE_VOICE_STEP_SECONDS,
+    voiceStartOffsetSeconds: 0,
+    pianoGainScale: 1,
+    pianoBodyGainScale: 1,
+    solfegeGainScale: 1,
+    solfegeFadeInSeconds: 0.006,
+    solfegeFadeOutSeconds: 0.05,
+  },
+};
+const SOLFEGE_SPEECH_BANDS = [
+  { center: 320, bandwidth: 220, weight: 0.24 },
+  { center: 720, bandwidth: 340, weight: 0.52 },
+  { center: 1250, bandwidth: 520, weight: 0.95 },
+  { center: 2300, bandwidth: 760, weight: 1 },
+  { center: 3800, bandwidth: 1100, weight: 0.7 },
+];
+const AUTO_SOLFEGE_TIMBRE_PRESETS = {
+  'piano-clear': {
+    label: '钢琴唱名',
+    usesSpeechGuide: true,
+    answerPianoGain: 1.12,
+    answerPianoBodyGain: 0.82,
+    answerPianoBodyStartSeconds: 0.14,
+    answerPianoBodyFadeSeconds: 0.26,
+    solfegeVoiceGain: 0.38,
+    pianoBlend: 0.3,
+    pianoDirectGain: 0.46,
+    synthBlend: 0.02,
+    dryAttackGain: 1.02,
+    dryBodyGain: 0.32,
+    dryBodyDecaySeconds: 0.38,
+    consonantGain: 1.72,
+    speechEnvelopeAmount: 0.28,
+    speechDetailGain: 0.11,
+    speechConsonantBoost: 1,
+    speechBandAmount: 0.18,
+    speechLowBandScale: 0.28,
+    speechPresenceScale: 1.38,
+    speechDetailConsonantFocus: 0.95,
+    speechDetailFloor: 0.34,
+    formantStartSeconds: 0.035,
+    formantFadeInSeconds: 0.085,
+    speechBandStartSeconds: 0.032,
+    speechBandFadeInSeconds: 0.06,
+    synthStartSeconds: 0.06,
+    synthFadeInSeconds: 0.08,
+    speechDetailWindowSeconds: 0.62,
+    speechPresenceGain: 0.36,
+    speechPresenceStartSeconds: 0.012,
+    speechPresenceFadeInSeconds: 0.018,
+    speechPresenceHoldSeconds: 0.54,
+    speechPresenceReleaseSeconds: 0.18,
+    speechVoiceLabelGain: 0.28,
+    speechVoiceLabelStartSeconds: 0.02,
+    speechVoiceLabelFadeInSeconds: 0.018,
+    speechVoiceLabelHoldSeconds: 0.52,
+    speechVoiceLabelReleaseSeconds: 0.2,
+    normalizeTarget: 0.72,
+    normalizeMaxBoost: 1.3,
+    voiceStartOffsetSeconds: 0.025,
+  },
+  balanced: {
+    label: '平衡',
+    answerPianoGain: AUTO_ANSWER_PIANO_GAIN,
+    answerPianoBodyGain: AUTO_ANSWER_PIANO_BODY_GAIN,
+    answerPianoBodyStartSeconds: AUTO_ANSWER_PIANO_BODY_START_SECONDS,
+    answerPianoBodyFadeSeconds: AUTO_ANSWER_PIANO_BODY_FADE_SECONDS,
+    solfegeVoiceGain: AUTO_SOLFEGE_VOICE_GAIN,
+    pianoBlend: AUTO_SOLFEGE_PIANO_BLEND,
+    pianoDirectGain: 0.46,
+    synthBlend: AUTO_SOLFEGE_SYNTH_BLEND,
+    dryAttackGain: AUTO_SOLFEGE_DRY_ATTACK_GAIN,
+    dryBodyGain: AUTO_SOLFEGE_DRY_BODY_GAIN,
+    dryBodyDecaySeconds: AUTO_SOLFEGE_DRY_BODY_DECAY_SECONDS,
+    consonantGain: AUTO_SOLFEGE_CONSONANT_GAIN,
+    speechEnvelopeAmount: AUTO_SOLFEGE_SPEECH_ENVELOPE_AMOUNT,
+    speechDetailGain: AUTO_SOLFEGE_SPEECH_DETAIL_GAIN,
+    speechConsonantBoost: AUTO_SOLFEGE_SPEECH_CONSONANT_BOOST,
+    speechBandAmount: AUTO_SOLFEGE_SPEECH_BAND_AMOUNT,
+    speechLowBandScale: 0.34,
+    speechPresenceScale: 1.24,
+    speechDetailConsonantFocus: 0.78,
+    speechDetailFloor: 0.035,
+    formantStartSeconds: 0.035,
+    formantFadeInSeconds: 0.085,
+    speechBandStartSeconds: 0.045,
+    speechBandFadeInSeconds: 0.075,
+    synthStartSeconds: 0.055,
+    synthFadeInSeconds: 0.07,
+    speechDetailWindowSeconds: 0.2,
+    speechPresenceGain: 0.08,
+    speechPresenceStartSeconds: 0.014,
+    speechPresenceFadeInSeconds: 0.02,
+    speechPresenceHoldSeconds: 0.34,
+    speechPresenceReleaseSeconds: 0.18,
+    speechVoiceLabelGain: 0.12,
+    speechVoiceLabelStartSeconds: 0.024,
+    speechVoiceLabelFadeInSeconds: 0.02,
+    speechVoiceLabelHoldSeconds: 0.42,
+    speechVoiceLabelReleaseSeconds: 0.18,
+    normalizeTarget: 0.64,
+    normalizeMaxBoost: 1.24,
+    voiceStartOffsetSeconds: AUTO_SOLFEGE_VOICE_START_OFFSET_SECONDS,
+  },
+  'solfege-clear': {
+    label: '唱名清楚',
+    answerPianoGain: 0.94,
+    answerPianoBodyGain: 0.64,
+    answerPianoBodyStartSeconds: 0.075,
+    answerPianoBodyFadeSeconds: 0.18,
+    solfegeVoiceGain: 0.32,
+    pianoBlend: 0.4,
+    pianoDirectGain: 0.32,
+    synthBlend: 0.04,
+    dryAttackGain: 1.02,
+    dryBodyGain: 0.3,
+    dryBodyDecaySeconds: 0.24,
+    consonantGain: 1.78,
+    speechEnvelopeAmount: 0.44,
+    speechDetailGain: 0.036,
+    speechConsonantBoost: 1.24,
+    speechBandAmount: 0.22,
+    speechLowBandScale: 0.46,
+    speechPresenceScale: 1.48,
+    speechDetailConsonantFocus: 0.9,
+    speechDetailFloor: 0.07,
+    formantStartSeconds: 0.025,
+    formantFadeInSeconds: 0.07,
+    speechBandStartSeconds: 0.028,
+    speechBandFadeInSeconds: 0.055,
+    synthStartSeconds: 0.036,
+    synthFadeInSeconds: 0.055,
+    speechDetailWindowSeconds: 0.24,
+    speechPresenceGain: 0.2,
+    speechPresenceStartSeconds: 0.008,
+    speechPresenceFadeInSeconds: 0.014,
+    speechPresenceHoldSeconds: 0.48,
+    speechPresenceReleaseSeconds: 0.2,
+    speechVoiceLabelGain: 0.42,
+    speechVoiceLabelStartSeconds: 0.012,
+    speechVoiceLabelFadeInSeconds: 0.014,
+    speechVoiceLabelHoldSeconds: 0.58,
+    speechVoiceLabelReleaseSeconds: 0.22,
+    normalizeTarget: 0.72,
+    normalizeMaxBoost: 1.38,
+    voiceStartOffsetSeconds: 0.045,
+  },
+};
+const SOLFEGE_TTS_ASSET_VERSION = 'mixed-solfege-5';
 const AUTO_ROUND_GAP_SECONDS = 1.1;
 const INTERVAL_SEMITONE_NAMES = {
   0: '同音',
@@ -229,16 +505,65 @@ const SOLFEGE_VOWEL_FORMANTS = {
   ],
 };
 const SOLFEGE_VOICE_PROFILES = {
-  C: { vowel: 'o', consonant: 'd', consonantSeconds: 0.05, noiseGain: 0.1, seed: 1 },
-  D: { vowel: 'ui', consonant: 'r', consonantSeconds: 0.07, noiseGain: 0.035, seed: 2 },
-  E: { vowel: 'i', consonant: 'm', consonantSeconds: 0.09, noiseGain: 0.012, seed: 3 },
-  F: { vowel: 'a', consonant: 'f', consonantSeconds: 0.08, noiseGain: 0.17, seed: 4 },
-  G: { vowel: 'o', consonant: 's', consonantSeconds: 0.08, noiseGain: 0.16, seed: 5 },
-  A: { vowel: 'a', consonant: 'l', consonantSeconds: 0.06, noiseGain: 0.018, seed: 6 },
-  B: { vowel: 'i', consonant: 'x', consonantSeconds: 0.08, noiseGain: 0.14, seed: 7 },
+  C: {
+    vowel: 'o',
+    vowels: ['u', 'o'],
+    consonant: 'd',
+    consonantSeconds: 0.055,
+    noiseGain: 0.15,
+    seed: 1,
+    vowelTransitionStart: 0.06,
+    vowelTransitionSeconds: 0.18,
+  },
+  D: {
+    vowel: 'ui',
+    vowels: ['u', 'ui'],
+    consonant: 'r',
+    consonantSeconds: 0.105,
+    noiseGain: 0.11,
+    seed: 2,
+    vowelTransitionStart: 0.085,
+    vowelTransitionSeconds: 0.2,
+  },
+  E: {
+    vowel: 'i',
+    vowels: ['i'],
+    consonant: 'm',
+    consonantSeconds: 0.12,
+    noiseGain: 0.018,
+    seed: 3,
+  },
+  F: { vowel: 'a', vowels: ['a'], consonant: 'f', consonantSeconds: 0.1, noiseGain: 0.24, seed: 4 },
+  G: {
+    vowel: 'o',
+    vowels: ['u', 'o'],
+    consonant: 's',
+    consonantSeconds: 0.095,
+    noiseGain: 0.23,
+    seed: 5,
+    vowelTransitionStart: 0.08,
+    vowelTransitionSeconds: 0.2,
+  },
+  A: {
+    vowel: 'a',
+    vowels: ['a'],
+    consonant: 'l',
+    consonantSeconds: 0.085,
+    noiseGain: 0.04,
+    seed: 6,
+  },
+  B: {
+    vowel: 'i',
+    vowels: ['i'],
+    consonant: 'x',
+    consonantSeconds: 0.105,
+    noiseGain: 0.22,
+    seed: 7,
+  },
 };
 const SOLFEGE_SHARP_PREFIX_PROFILE = {
   vowel: 'eng',
+  vowels: ['eng'],
   consonant: 'sh',
   consonantSeconds: 0.08,
   noiseGain: 0.16,
@@ -249,6 +574,8 @@ const SOLFEGE_SHARP_PREFIX_PROFILE = {
 let audioContext = null;
 const audioBufferCache = {};
 const pitchedSolfegeSampleCache = {};
+const solfegeSpeechBufferCache = {};
+const solfegeSpeechGuideCache = {};
 const audioBufferPeakCache = new WeakMap();
 let currentPlayingSource = null;
 
@@ -371,6 +698,11 @@ function getAudioPath(note) {
   }
 
   return `${window.location.origin}${getAppRootPath()}audio/piano/${fileNote}.mp3`;
+}
+
+function getSolfegeSpeechPath(pitchName) {
+  const fileName = pitchName.replace('#', 's');
+  return `${window.location.origin}${getAppRootPath()}audio/solfege-tts/${fileName}.mp3?v=${SOLFEGE_TTS_ASSET_VERSION}`;
 }
 
 // 加载音频文件
@@ -812,6 +1144,9 @@ function getSequenceDuration(noteCount, stepSeconds, noteSeconds) {
 
 function createAutoMelodySession(options) {
   const { rangeIndex, melodyLength, answerDelay } = options;
+  const solfegeClarity = normalizeAutoSolfegeClarity(options.solfegeClarity);
+  const timbrePreset = getAutoSolfegeTimbrePreset(options.timbrePreset, solfegeClarity);
+  const answerModeConfig = getAutoAnswerModeConfig(options.answerMode);
   const roundCount = AUTO_MELODY_BATCH_ROUNDS;
   const rounds = [];
   let cursor = AUTO_MELODY_LEAD_IN_SECONDS;
@@ -827,14 +1162,19 @@ function createAutoMelodySession(options) {
     const answerStart = answerRevealTime + AUTO_ANSWER_START_OFFSET_SECONDS;
     const answerToneEnd =
       answerStart +
-      getSequenceDuration(melody.length, AUTO_ANSWER_NOTE_STEP_SECONDS, AUTO_ANSWER_NOTE_SECONDS);
-    const speechStart = answerStart + AUTO_SOLFEGE_VOICE_START_OFFSET_SECONDS;
+      getSequenceDuration(
+        melody.length,
+        answerModeConfig.answerNoteStepSeconds,
+        answerModeConfig.answerNoteSeconds
+      );
+    const speechStart =
+      answerStart + timbrePreset.voiceStartOffsetSeconds + answerModeConfig.voiceStartOffsetSeconds;
     const speechEnd =
       speechStart +
       getSequenceDuration(
         melody.length,
-        AUTO_SOLFEGE_VOICE_STEP_SECONDS,
-        AUTO_SOLFEGE_VOICE_SECONDS
+        answerModeConfig.voiceStepSeconds,
+        answerModeConfig.voiceSeconds
       );
     const answerEnd = Math.max(answerToneEnd, speechEnd);
     const endTime = answerEnd + AUTO_ROUND_GAP_SECONDS;
@@ -857,6 +1197,13 @@ function createAutoMelodySession(options) {
 
   return {
     ...options,
+    solfegeClarity,
+    answerMode: AUTO_ANSWER_MODES[options.answerMode]
+      ? options.answerMode
+      : AUTO_ANSWER_MODE_DEFAULT,
+    timbrePreset: AUTO_SOLFEGE_TIMBRE_PRESETS[options.timbrePreset]
+      ? options.timbrePreset
+      : AUTO_SOLFEGE_DEFAULT_TIMBRE,
     rounds,
     duration: cursor + 0.4,
   };
@@ -876,6 +1223,21 @@ async function getTrainingAudioBuffer(note) {
     audioBufferCache[note] = synthBuffer;
     return synthBuffer;
   }
+}
+
+async function getSolfegeSpeechBuffer(pitchName) {
+  if (!initAudioContext()) throw new Error('AudioContext 初始化失败');
+  if (solfegeSpeechBufferCache[pitchName]) return solfegeSpeechBufferCache[pitchName];
+
+  const response = await fetch(getSolfegeSpeechPath(pitchName));
+  if (!response.ok) {
+    throw new Error(`唱名语音资源加载失败: ${pitchName}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  const buffer = await audioContext.decodeAudioData(arrayBuffer);
+  solfegeSpeechBufferCache[pitchName] = buffer;
+  return buffer;
 }
 
 function createMixTarget(frameCount) {
@@ -1006,8 +1368,20 @@ function getFormantWeight(frequency, formants) {
   }, 0.03);
 }
 
+function getSolfegeProfileVowels(profile) {
+  return Array.isArray(profile.vowels) && profile.vowels.length > 0
+    ? profile.vowels
+    : [profile.vowel || 'a'];
+}
+
+function getSolfegePrimaryVowel(profile) {
+  const vowels = getSolfegeProfileVowels(profile);
+  return vowels[vowels.length - 1];
+}
+
 function getVoiceHarmonics(frequency, sampleRate, profile) {
-  const formants = SOLFEGE_VOWEL_FORMANTS[profile.vowel] || SOLFEGE_VOWEL_FORMANTS.a;
+  const formants =
+    SOLFEGE_VOWEL_FORMANTS[getSolfegePrimaryVowel(profile)] || SOLFEGE_VOWEL_FORMANTS.a;
   const maxHarmonic = Math.max(1, Math.min(28, Math.floor((sampleRate * 0.45) / frequency)));
   const harmonics = [];
   let totalWeight = 0;
@@ -1035,6 +1409,94 @@ function getVoiceHarmonics(frequency, sampleRate, profile) {
 function getDeterministicNoise(index, seed) {
   const value = Math.sin((index + 1) * (12.9898 + seed * 0.137) + seed * 78.233) * 43758.5453;
   return (value - Math.floor(value)) * 2 - 1;
+}
+
+function createBandpassFilter(centerFrequency, bandwidth, sampleRate, level) {
+  const frequency = Math.max(80, Math.min(sampleRate * 0.45, centerFrequency));
+  const q = Math.max(0.25, frequency / Math.max(80, bandwidth));
+  const omega = (2 * Math.PI * frequency) / sampleRate;
+  const alpha = Math.sin(omega) / (2 * q);
+  const cosOmega = Math.cos(omega);
+  const a0 = 1 + alpha;
+
+  return {
+    a1: (-2 * cosOmega) / a0,
+    a2: (1 - alpha) / a0,
+    b0: alpha / a0,
+    b1: 0,
+    b2: -alpha / a0,
+    level,
+    x1: 0,
+    x2: 0,
+    y1: 0,
+    y2: 0,
+  };
+}
+
+function createVowelFilterBank(vowel, sampleRate) {
+  const formants = SOLFEGE_VOWEL_FORMANTS[vowel] || SOLFEGE_VOWEL_FORMANTS.a;
+  const filters = formants.map(([center, bandwidth, level]) =>
+    createBandpassFilter(center, bandwidth, sampleRate, level)
+  );
+  const totalLevel = formants.reduce((sum, [, , level]) => sum + level, 0) || 1;
+  return { filters, totalLevel };
+}
+
+function createVowelFilterBanks(profile, sampleRate) {
+  return getSolfegeProfileVowels(profile).map((vowel) => createVowelFilterBank(vowel, sampleRate));
+}
+
+function createSpeechBandFilters(sampleRate) {
+  return SOLFEGE_SPEECH_BANDS.map((band) =>
+    createBandpassFilter(band.center, band.bandwidth, sampleRate, band.weight)
+  );
+}
+
+function processBandpassFilter(filter, input) {
+  const output =
+    filter.b0 * input +
+    filter.b1 * filter.x1 +
+    filter.b2 * filter.x2 -
+    filter.a1 * filter.y1 -
+    filter.a2 * filter.y2;
+
+  filter.x2 = filter.x1;
+  filter.x1 = input;
+  filter.y2 = filter.y1;
+  filter.y1 = output;
+  return output;
+}
+
+function processVowelFilterBank(filterBank, input) {
+  let value = 0;
+  filterBank.filters.forEach((filter) => {
+    value += processBandpassFilter(filter, input) * filter.level;
+  });
+  return value / filterBank.totalLevel;
+}
+
+function getVowelTransitionAmount(profile, time) {
+  const start =
+    profile.vowelTransitionStart ?? Math.max(0.07, (profile.consonantSeconds || 0) * 1.1);
+  const seconds = profile.vowelTransitionSeconds ?? 0.2;
+  const progress = Math.max(0, Math.min(1, (time - start) / seconds));
+  return progress * progress * (3 - 2 * progress);
+}
+
+function processSyllableVowelFilters(filterBanks, input, profile, time) {
+  if (filterBanks.length <= 1) {
+    return processVowelFilterBank(filterBanks[0], input);
+  }
+
+  const first = processVowelFilterBank(filterBanks[0], input);
+  const second = processVowelFilterBank(filterBanks[1], input);
+  const transition = getVowelTransitionAmount(profile, time);
+  return first * (1 - transition) + second * transition;
+}
+
+function smoothStep01(value) {
+  const progress = Math.max(0, Math.min(1, value));
+  return progress * progress * (3 - 2 * progress);
 }
 
 function getAudioBufferPeak(sourceBuffer) {
@@ -1071,18 +1533,162 @@ function getAudioBufferSampleAtTime(sourceBuffer, time) {
   return value / sourceBuffer.numberOfChannels;
 }
 
-function getPianoExcitationSample(sourceBuffer, time) {
-  if (!sourceBuffer) return 0;
+function createSolfegeSpeechGuide(pitchName, speechBuffer, sampleRate, duration) {
+  if (!speechBuffer) return null;
 
-  const peak = getAudioBufferPeak(sourceBuffer);
-  if (peak <= 0) return 0;
+  const cacheKey = `${pitchName}:${speechBuffer.sampleRate}:${speechBuffer.length}:${sampleRate}:${duration}`;
+  if (solfegeSpeechGuideCache[cacheKey]) {
+    return solfegeSpeechGuideCache[cacheKey];
+  }
 
-  const normalizedSample = getAudioBufferSampleAtTime(sourceBuffer, time) / peak;
-  const bodyLift = 0.74 + 0.26 * Math.exp(-time / 0.55);
-  return Math.tanh(normalizedSample * 1.75) * bodyLift;
+  const sampleCount = Math.ceil(duration * sampleRate);
+  const envelope = new Float32Array(sampleCount);
+  const brightness = new Float32Array(sampleCount);
+  const detail = new Float32Array(sampleCount);
+  const presence = new Float32Array(sampleCount);
+  const voice = new Float32Array(sampleCount);
+  const bands = SOLFEGE_SPEECH_BANDS.map(() => new Float32Array(sampleCount));
+  const bandFilters = createSpeechBandFilters(sampleRate);
+  const bandFollowers = SOLFEGE_SPEECH_BANDS.map(() => 0);
+  const bandPeaks = SOLFEGE_SPEECH_BANDS.map(() => 0);
+  let envelopePeak = 0;
+  let brightnessPeak = 0;
+  let detailPeak = 0;
+  let presencePeak = 0;
+  let voicePeak = 0;
+  let envelopeFollower = 0;
+  let brightnessFollower = 0;
+  let previousSample = 0;
+  let lowpassSample = 0;
+  let presenceLowpassSample = 0;
+  let presenceSmoothSample = 0;
+
+  for (let index = 0; index < sampleCount; index++) {
+    const progress = sampleCount <= 1 ? 0 : index / (sampleCount - 1);
+    const sourceTime = progress * Math.max(0, speechBuffer.duration - 1 / speechBuffer.sampleRate);
+    const sample = getAudioBufferSampleAtTime(speechBuffer, sourceTime);
+    voice[index] = sample;
+    voicePeak = Math.max(voicePeak, Math.abs(sample));
+    const level = Math.abs(sample);
+    const attack = level > envelopeFollower ? 0.28 : 0.012;
+    envelopeFollower += (level - envelopeFollower) * attack;
+    envelope[index] = envelopeFollower;
+    envelopePeak = Math.max(envelopePeak, envelopeFollower);
+
+    const edge = Math.abs(sample - previousSample);
+    brightnessFollower += (edge - brightnessFollower) * (edge > brightnessFollower ? 0.38 : 0.018);
+    brightness[index] = brightnessFollower;
+    brightnessPeak = Math.max(brightnessPeak, brightnessFollower);
+
+    lowpassSample += (sample - lowpassSample) * 0.025;
+    const detailSample = sample - lowpassSample;
+    detail[index] = detailSample;
+    detailPeak = Math.max(detailPeak, Math.abs(detailSample));
+
+    presenceLowpassSample += (sample - presenceLowpassSample) * 0.09;
+    presenceSmoothSample += (sample - presenceSmoothSample) * 0.55;
+    const presenceSample = presenceSmoothSample - presenceLowpassSample;
+    presence[index] = presenceSample;
+    presencePeak = Math.max(presencePeak, Math.abs(presenceSample));
+
+    bandFilters.forEach((filter, bandIndex) => {
+      const bandLevel = Math.abs(processBandpassFilter(filter, sample));
+      const bandAttack = bandLevel > bandFollowers[bandIndex] ? 0.32 : 0.018;
+      bandFollowers[bandIndex] += (bandLevel - bandFollowers[bandIndex]) * bandAttack;
+      bands[bandIndex][index] = bandFollowers[bandIndex];
+      bandPeaks[bandIndex] = Math.max(bandPeaks[bandIndex], bandFollowers[bandIndex]);
+    });
+
+    previousSample = sample;
+  }
+
+  const safeEnvelopePeak = envelopePeak || 1;
+  const safeBrightnessPeak = brightnessPeak || 1;
+  const safeDetailPeak = detailPeak || 1;
+  const safePresencePeak = presencePeak || 1;
+  const safeVoicePeak = voicePeak || 1;
+  for (let index = 0; index < sampleCount; index++) {
+    envelope[index] = Math.min(1, envelope[index] / safeEnvelopePeak);
+    brightness[index] = Math.min(1, brightness[index] / safeBrightnessPeak);
+    detail[index] = detail[index] / safeDetailPeak;
+    presence[index] = presence[index] / safePresencePeak;
+    voice[index] = voice[index] / safeVoicePeak;
+  }
+  bands.forEach((bandValues, bandIndex) => {
+    const safePeak = bandPeaks[bandIndex] || 1;
+    for (let index = 0; index < sampleCount; index++) {
+      bandValues[index] = Math.min(1, bandValues[index] / safePeak);
+    }
+  });
+
+  solfegeSpeechGuideCache[cacheKey] = { bands, brightness, detail, envelope, presence, voice };
+  return solfegeSpeechGuideCache[cacheKey];
 }
 
-function getConsonantNoise(profile, index, sampleRate) {
+function getSpeechGuideValue(speechGuide, key, index) {
+  if (!speechGuide || !speechGuide[key]) return 0;
+  const values = speechGuide[key];
+  return values[Math.max(0, Math.min(values.length - 1, index))] || 0;
+}
+
+function getSpeechGuideBandValue(speechGuide, bandIndex, index) {
+  if (!speechGuide || !speechGuide.bands || !speechGuide.bands[bandIndex]) return 0;
+  const values = speechGuide.bands[bandIndex];
+  return values[Math.max(0, Math.min(values.length - 1, index))] || 0;
+}
+
+function processSpeechBandCarrier(filters, input, speechGuide, index, timbrePreset) {
+  if (!speechGuide || !speechGuide.bands || timbrePreset.speechBandAmount <= 0) return 0;
+
+  let value = 0;
+  let totalWeight = 0;
+  filters.forEach((filter, bandIndex) => {
+    const band = SOLFEGE_SPEECH_BANDS[bandIndex];
+    const carrier = processBandpassFilter(filter, input);
+    const speechEnvelope = getSpeechGuideBandValue(speechGuide, bandIndex, index);
+    const lowScale = band.center < 900 ? (timbrePreset.speechLowBandScale ?? 1) : 1;
+    const presenceScale = band.center >= 1800 ? (timbrePreset.speechPresenceScale ?? 1) : 1;
+    const bandWeight = band.weight * lowScale * presenceScale;
+    const shapedEnvelope = Math.pow(speechEnvelope, band.center >= 1800 ? 0.72 : 1.18);
+    const bandGain = 0.08 + shapedEnvelope * 1.24;
+    value += carrier * bandGain * bandWeight;
+    totalWeight += bandWeight;
+  });
+
+  return totalWeight > 0 ? (value / totalWeight) * timbrePreset.speechBandAmount : 0;
+}
+
+function getPianoCarrierSample(sourceBuffer, time, timbrePreset) {
+  if (!sourceBuffer) {
+    return { attack: 0, body: 0, dryBody: 0 };
+  }
+
+  const peak = getAudioBufferPeak(sourceBuffer);
+  if (peak <= 0) {
+    return { attack: 0, body: 0, dryBody: 0 };
+  }
+
+  const currentSample = getAudioBufferSampleAtTime(sourceBuffer, time) / peak;
+  const previousTime = Math.max(0, time - 1 / sourceBuffer.sampleRate);
+  const previousSample = getAudioBufferSampleAtTime(sourceBuffer, previousTime) / peak;
+  const bodyLift = 0.8 + 0.2 * Math.exp(-time / 0.5);
+  const attackEnvelope = Math.exp(-time / 0.042);
+  const hammerEnvelope = Math.exp(-time / 0.018);
+  const edge = currentSample - previousSample * 0.72;
+
+  return {
+    attack:
+      (currentSample * 0.58 + Math.tanh(edge * 4.2) * 0.62) * attackEnvelope +
+      currentSample * 0.22 * hammerEnvelope,
+    body: Math.tanh(currentSample * 1.18) * bodyLift,
+    dryBody:
+      currentSample *
+      Math.exp(-time / timbrePreset.dryBodyDecaySeconds) *
+      Math.max(0, 1 - time / 0.58),
+  };
+}
+
+function getConsonantNoise(profile, index, sampleRate, timbrePreset) {
   const consonantSeconds = profile.consonantSeconds || 0;
   if (consonantSeconds <= 0) return 0;
 
@@ -1094,13 +1700,16 @@ function getConsonantNoise(profile, index, sampleRate) {
   const noise = getDeterministicNoise(index, seed);
   const previousNoise = getDeterministicNoise(index - 1, seed);
   const isBrightConsonant = ['f', 's', 'sh', 'x'].includes(profile.consonant);
+  const isLiquidFricative = profile.consonant === 'r';
   const shapedNoise = isBrightConsonant
     ? noise - previousNoise * 0.68
-    : noise * 0.7 + previousNoise * 0.3;
+    : isLiquidFricative
+      ? noise - previousNoise * 0.42
+      : noise * 0.7 + previousNoise * 0.3;
   const plosiveBoost = profile.consonant === 'd' ? Math.exp(-progress * 5.5) : 1;
   const envelope = Math.sin(Math.PI * progress) * Math.pow(1 - progress, 0.55) * plosiveBoost;
 
-  return shapedNoise * envelope * (profile.noiseGain || 0);
+  return shapedNoise * envelope * (profile.noiseGain || 0) * timbrePreset.consonantGain;
 }
 
 function getVoiceEnvelope(index, sampleRate, sampleCount, profile) {
@@ -1117,7 +1726,17 @@ function getVoiceEnvelope(index, sampleRate, sampleCount, profile) {
   return Math.min(attack, release) * vowelOpen;
 }
 
-function getVoicedSample(harmonics, frequency, time, duration, profile, pianoExcitation) {
+function getVoicedSample(
+  harmonics,
+  filterBanks,
+  frequency,
+  time,
+  duration,
+  profile,
+  pianoCarrier,
+  speechBandCarrier,
+  timbrePreset
+) {
   const vibratoStart = Math.max(0.18, duration * 0.28);
   const vibratoDepth = time > vibratoStart ? 0.0025 : 0;
   const vibrato = 1 + vibratoDepth * Math.sin(2 * Math.PI * 5.2 * (time - vibratoStart));
@@ -1133,10 +1752,32 @@ function getVoicedSample(harmonics, frequency, time, duration, profile, pianoExc
     profile.consonant === 'm' && time < (profile.consonantSeconds || 0)
       ? Math.sin(2 * Math.PI * frequency * time) * 0.2
       : 0;
+  const consonantSeconds = profile.consonantSeconds || 0;
+  const consonantHold =
+    consonantSeconds > 0 && time < consonantSeconds ? 1 - time / consonantSeconds : 0;
+  const liquidBlend = ['r', 'l'].includes(profile.consonant)
+    ? Math.sin(phase * 1.5 + profile.seed) * 0.09 * consonantHold
+    : 0;
+  const voiceSource = value + nasalBlend + liquidBlend;
+  const formantPiano = processSyllableVowelFilters(filterBanks, pianoCarrier.body, profile, time);
+  const directPiano = pianoCarrier.body * (timbrePreset.pianoDirectGain ?? 0);
+  const formantStartSeconds = timbrePreset.formantStartSeconds ?? 0.035;
+  const formantFadeInSeconds = timbrePreset.formantFadeInSeconds ?? 0.08;
+  const formantOpen = smoothStep01((time - formantStartSeconds) / formantFadeInSeconds);
+  const speechBandStartSeconds = timbrePreset.speechBandStartSeconds ?? 0.04;
+  const speechBandFadeInSeconds = timbrePreset.speechBandFadeInSeconds ?? 0.065;
+  const speechBandOpen = smoothStep01((time - speechBandStartSeconds) / speechBandFadeInSeconds);
+  const synthStartSeconds = timbrePreset.synthStartSeconds ?? 0.05;
+  const synthFadeInSeconds = timbrePreset.synthFadeInSeconds ?? 0.065;
+  const synthOpen = smoothStep01((time - synthStartSeconds) / synthFadeInSeconds);
 
-  const voiceSource = value + nasalBlend;
   return (
-    voiceSource * (1 - AUTO_SOLFEGE_PIANO_BLEND * 0.62) + pianoExcitation * AUTO_SOLFEGE_PIANO_BLEND
+    formantPiano * timbrePreset.pianoBlend * formantOpen +
+    directPiano +
+    speechBandCarrier * speechBandOpen +
+    pianoCarrier.attack * timbrePreset.dryAttackGain +
+    pianoCarrier.dryBody * timbrePreset.dryBodyGain +
+    voiceSource * timbrePreset.synthBlend * synthOpen
   );
 }
 
@@ -1147,25 +1788,112 @@ function mixSungSyllableSamples(
   startTime,
   duration,
   profile,
-  pianoSourceBuffer
+  pianoSourceBuffer,
+  speechGuide,
+  timbrePreset
 ) {
   const startSample = Math.max(0, Math.floor(startTime * sampleRate));
   const sampleCount = Math.min(Math.floor(duration * sampleRate), samples.length - startSample);
   if (sampleCount <= 0) return;
 
   const harmonics = getVoiceHarmonics(frequency, sampleRate, profile);
+  const filterBanks = createVowelFilterBanks(profile, sampleRate);
+  const speechBandFilters = createSpeechBandFilters(sampleRate);
 
   for (let i = 0; i < sampleCount; i++) {
     const time = i / sampleRate;
-    const envelope = getVoiceEnvelope(i, sampleRate, sampleCount, profile);
-    const pianoExcitation = getPianoExcitationSample(pianoSourceBuffer, time);
-    const voiced = getVoicedSample(harmonics, frequency, time, duration, profile, pianoExcitation);
-    const consonantNoise = getConsonantNoise(profile, i, sampleRate);
-    samples[startSample + i] += (voiced * envelope + consonantNoise) * 0.92;
+    const baseEnvelope = getVoiceEnvelope(i, sampleRate, sampleCount, profile);
+    const speechEnvelope = getSpeechGuideValue(speechGuide, 'envelope', i);
+    const speechBrightness = getSpeechGuideValue(speechGuide, 'brightness', i);
+    const speechDetail = getSpeechGuideValue(speechGuide, 'detail', i);
+    const speechPresence = getSpeechGuideValue(speechGuide, 'presence', i);
+    const speechVoice = getSpeechGuideValue(speechGuide, 'voice', i);
+    const guideEnvelope = 0.38 + speechEnvelope * 0.62;
+    const envelope =
+      baseEnvelope *
+      (1 - timbrePreset.speechEnvelopeAmount + timbrePreset.speechEnvelopeAmount * guideEnvelope);
+    const pianoCarrier = getPianoCarrierSample(pianoSourceBuffer, time, timbrePreset);
+    const speechBandCarrier = processSpeechBandCarrier(
+      speechBandFilters,
+      pianoCarrier.body,
+      speechGuide,
+      i,
+      timbrePreset
+    );
+    const voiced = getVoicedSample(
+      harmonics,
+      filterBanks,
+      frequency,
+      time,
+      duration,
+      profile,
+      pianoCarrier,
+      speechBandCarrier,
+      timbrePreset
+    );
+    const consonantNoise =
+      getConsonantNoise(profile, i, sampleRate, timbrePreset) *
+      (1 + speechBrightness * timbrePreset.speechConsonantBoost);
+    const consonantFocusDuration = Math.max(0.12, (profile.consonantSeconds || 0.04) + 0.08);
+    const consonantFocus = Math.max(0, 1 - time / consonantFocusDuration);
+    const detailFocus =
+      (timbrePreset.speechDetailFloor ?? 0.08) +
+      consonantFocus * (timbrePreset.speechDetailConsonantFocus ?? 0.65);
+    const detailWindowSeconds = timbrePreset.speechDetailWindowSeconds ?? 0.2;
+    const detailWindow = Math.max(0, 1 - time / detailWindowSeconds);
+    const detailEnvelope = Math.max(0.42, speechEnvelope, speechBrightness * 0.72);
+    const speechDetailSample =
+      speechDetail * detailEnvelope * timbrePreset.speechDetailGain * detailFocus * detailWindow;
+    const presenceStartSeconds = timbrePreset.speechPresenceStartSeconds ?? 0.012;
+    const presenceFadeInSeconds = Math.max(
+      0.001,
+      timbrePreset.speechPresenceFadeInSeconds ?? 0.018
+    );
+    const presenceOpen = smoothStep01((time - presenceStartSeconds) / presenceFadeInSeconds);
+    const presenceHoldSeconds = timbrePreset.speechPresenceHoldSeconds ?? 0.38;
+    const presenceReleaseSeconds = Math.max(
+      0.001,
+      timbrePreset.speechPresenceReleaseSeconds ?? 0.18
+    );
+    const presenceFadeOut = Math.max(
+      0,
+      1 - Math.max(0, time - presenceHoldSeconds) / presenceReleaseSeconds
+    );
+    const speechPresenceSample =
+      speechPresence *
+      timbrePreset.speechPresenceGain *
+      presenceOpen *
+      presenceFadeOut *
+      (0.52 + Math.max(speechEnvelope, speechBrightness) * 0.48);
+    const labelStartSeconds = timbrePreset.speechVoiceLabelStartSeconds ?? 0.02;
+    const labelFadeInSeconds = Math.max(0.001, timbrePreset.speechVoiceLabelFadeInSeconds ?? 0.018);
+    const labelOpen = smoothStep01((time - labelStartSeconds) / labelFadeInSeconds);
+    const labelHoldSeconds = timbrePreset.speechVoiceLabelHoldSeconds ?? 0.5;
+    const labelReleaseSeconds = Math.max(
+      0.001,
+      timbrePreset.speechVoiceLabelReleaseSeconds ?? 0.18
+    );
+    const labelFadeOut = Math.max(
+      0,
+      1 - Math.max(0, time - labelHoldSeconds) / labelReleaseSeconds
+    );
+    const speechVoiceLabelSample =
+      speechVoice *
+      timbrePreset.speechVoiceLabelGain *
+      labelOpen *
+      labelFadeOut *
+      (0.44 + speechEnvelope * 0.56);
+    samples[startSample + i] +=
+      (voiced * envelope +
+        consonantNoise +
+        speechDetailSample +
+        speechPresenceSample +
+        speechVoiceLabelSample) *
+      0.92;
   }
 }
 
-function normalizeSolfegeSamples(samples) {
+function normalizeSolfegeSamples(samples, timbrePreset) {
   let peak = 0;
   for (let i = 0; i < samples.length; i++) {
     peak = Math.max(peak, Math.abs(samples[i]));
@@ -1173,14 +1901,23 @@ function normalizeSolfegeSamples(samples) {
 
   if (peak <= 0) return samples;
 
-  const scale = Math.min(1.8, 0.82 / peak);
+  const target = timbrePreset.normalizeTarget ?? 0.68;
+  const maxBoost = timbrePreset.normalizeMaxBoost ?? 1.28;
+  const scale = Math.min(maxBoost, target / peak);
   for (let i = 0; i < samples.length; i++) {
     samples[i] *= scale;
   }
   return samples;
 }
 
-function createPitchedSolfegeSamples(note, sampleRate, duration, pianoSourceBuffer) {
+function createPitchedSolfegeSamples(
+  note,
+  sampleRate,
+  duration,
+  pianoSourceBuffer,
+  speechSourceBuffer,
+  timbrePreset
+) {
   const normalizedNote = normalizeNoteName(note) || note;
   const frequency = noteToFrequency(normalizedNote);
   if (!frequency) {
@@ -1190,12 +1927,51 @@ function createPitchedSolfegeSamples(note, sampleRate, duration, pianoSourceBuff
   const sourceKey = pianoSourceBuffer
     ? `${pianoSourceBuffer.sampleRate}:${pianoSourceBuffer.length}`
     : 'no-piano';
-  const cacheKey = `${normalizedNote}:${sampleRate}:${duration}:${sourceKey}`;
+  const speechKey = speechSourceBuffer
+    ? `${speechSourceBuffer.sampleRate}:${speechSourceBuffer.length}`
+    : 'no-speech';
+  const timbreKey = [
+    timbrePreset.pianoBlend,
+    timbrePreset.pianoDirectGain,
+    timbrePreset.synthBlend,
+    timbrePreset.dryAttackGain,
+    timbrePreset.dryBodyGain,
+    timbrePreset.consonantGain,
+    timbrePreset.speechEnvelopeAmount,
+    timbrePreset.speechDetailGain,
+    timbrePreset.speechPresenceGain,
+    timbrePreset.speechVoiceLabelGain,
+    timbrePreset.speechConsonantBoost,
+    timbrePreset.speechBandAmount,
+    timbrePreset.speechLowBandScale,
+    timbrePreset.speechPresenceScale,
+    timbrePreset.speechDetailConsonantFocus,
+    timbrePreset.speechDetailFloor,
+    timbrePreset.formantStartSeconds,
+    timbrePreset.formantFadeInSeconds,
+    timbrePreset.speechBandStartSeconds,
+    timbrePreset.speechBandFadeInSeconds,
+    timbrePreset.synthStartSeconds,
+    timbrePreset.synthFadeInSeconds,
+    timbrePreset.speechDetailWindowSeconds,
+    timbrePreset.speechPresenceStartSeconds,
+    timbrePreset.speechPresenceFadeInSeconds,
+    timbrePreset.speechPresenceHoldSeconds,
+    timbrePreset.speechPresenceReleaseSeconds,
+    timbrePreset.speechVoiceLabelStartSeconds,
+    timbrePreset.speechVoiceLabelFadeInSeconds,
+    timbrePreset.speechVoiceLabelHoldSeconds,
+    timbrePreset.speechVoiceLabelReleaseSeconds,
+    timbrePreset.normalizeTarget,
+    timbrePreset.normalizeMaxBoost,
+  ].join(':');
+  const cacheKey = `${normalizedNote}:${sampleRate}:${duration}:${sourceKey}:${speechKey}:${timbreKey}`;
   if (pitchedSolfegeSampleCache[cacheKey]) {
     return pitchedSolfegeSampleCache[cacheKey];
   }
 
-  const { baseProfile, hasSharpPrefix } = getSolfegeVoiceProfile(normalizedNote);
+  const { baseProfile, hasSharpPrefix, pitchName } = getSolfegeVoiceProfile(normalizedNote);
+  const speechGuide = createSolfegeSpeechGuide(pitchName, speechSourceBuffer, sampleRate, duration);
   const samples = new Float32Array(Math.ceil(duration * sampleRate));
 
   if (hasSharpPrefix) {
@@ -1208,7 +1984,9 @@ function createPitchedSolfegeSamples(note, sampleRate, duration, pianoSourceBuff
       0,
       prefixDuration,
       SOLFEGE_SHARP_PREFIX_PROFILE,
-      pianoSourceBuffer
+      pianoSourceBuffer,
+      speechGuide,
+      timbrePreset
     );
     mixSungSyllableSamples(
       samples,
@@ -1217,7 +1995,9 @@ function createPitchedSolfegeSamples(note, sampleRate, duration, pianoSourceBuff
       mainStart,
       duration - mainStart,
       baseProfile,
-      pianoSourceBuffer
+      pianoSourceBuffer,
+      speechGuide,
+      timbrePreset
     );
   } else {
     mixSungSyllableSamples(
@@ -1227,11 +2007,13 @@ function createPitchedSolfegeSamples(note, sampleRate, duration, pianoSourceBuff
       0,
       duration,
       baseProfile,
-      pianoSourceBuffer
+      pianoSourceBuffer,
+      speechGuide,
+      timbrePreset
     );
   }
 
-  pitchedSolfegeSampleCache[cacheKey] = normalizeSolfegeSamples(samples);
+  pitchedSolfegeSampleCache[cacheKey] = normalizeSolfegeSamples(samples, timbrePreset);
   return pitchedSolfegeSampleCache[cacheKey];
 }
 
@@ -1259,20 +2041,34 @@ function mixMonoSamples(target, sampleRate, sourceSamples, startTime, duration, 
   }
 }
 
-function mixPitchedSolfegeSequence(target, sampleRate, buffers, melody, startTime, options) {
+function mixPitchedSolfegeSequence(
+  target,
+  sampleRate,
+  buffers,
+  speechBuffers,
+  melody,
+  startTime,
+  options
+) {
+  const timbrePreset = options.timbrePreset || getAutoSolfegeTimbrePreset();
+  const voiceSeconds = options.voiceSeconds ?? AUTO_SOLFEGE_VOICE_SECONDS;
+  const voiceStepSeconds = options.voiceStepSeconds ?? AUTO_SOLFEGE_VOICE_STEP_SECONDS;
   melody.forEach((note, index) => {
+    const pitchName = getSolfegePitchName(note);
     const samples = createPitchedSolfegeSamples(
       note,
       sampleRate,
-      AUTO_SOLFEGE_VOICE_SECONDS,
-      buffers[note]
+      voiceSeconds,
+      buffers[note],
+      speechBuffers[pitchName],
+      timbrePreset
     );
     mixMonoSamples(
       target,
       sampleRate,
       samples,
-      startTime + index * AUTO_SOLFEGE_VOICE_STEP_SECONDS,
-      AUTO_SOLFEGE_VOICE_SECONDS,
+      startTime + index * voiceStepSeconds,
+      voiceSeconds,
       options
     );
   });
@@ -1326,13 +2122,27 @@ async function createAutoMelodyAudioBlob(session) {
     await audioContext.resume();
   }
 
+  const timbrePreset = getAutoSolfegeTimbrePreset(session.timbrePreset, session.solfegeClarity);
+  const answerModeConfig = getAutoAnswerModeConfig(session.answerMode);
   const uniqueNotes = [...new Set(session.rounds.flatMap((round) => round.melody))];
+  const usesSpeechGuide = timbrePreset.usesSpeechGuide !== false;
+  const uniquePitchNames = usesSpeechGuide
+    ? [...new Set(uniqueNotes.map((note) => getSolfegePitchName(note)))]
+    : [];
   const buffers = {};
+  const speechBuffers = {};
   await Promise.all(
     uniqueNotes.map(async (note) => {
       buffers[note] = await getTrainingAudioBuffer(note);
     })
   );
+  if (usesSpeechGuide) {
+    await Promise.all(
+      uniquePitchNames.map(async (pitchName) => {
+        speechBuffers[pitchName] = await getSolfegeSpeechBuffer(pitchName);
+      })
+    );
+  }
 
   const sampleRate = audioContext.sampleRate;
   const samples = createMixTarget(Math.ceil(session.duration * sampleRate));
@@ -1354,22 +2164,33 @@ async function createAutoMelodyAudioBlob(session) {
       buffers,
       round.melody,
       round.answerStart,
-      AUTO_ANSWER_NOTE_STEP_SECONDS,
-      AUTO_ANSWER_NOTE_SECONDS,
+      answerModeConfig.answerNoteStepSeconds,
+      answerModeConfig.answerNoteSeconds,
       {
-        gain: AUTO_ANSWER_PIANO_GAIN,
+        gain: timbrePreset.answerPianoGain * answerModeConfig.pianoGainScale,
         pan: AUTO_ANSWER_PIANO_PAN,
-        bodyGain: AUTO_ANSWER_PIANO_BODY_GAIN,
-        bodyStartSeconds: AUTO_ANSWER_PIANO_BODY_START_SECONDS,
-        bodyFadeSeconds: AUTO_ANSWER_PIANO_BODY_FADE_SECONDS,
+        bodyGain: timbrePreset.answerPianoBodyGain * answerModeConfig.pianoBodyGainScale,
+        bodyStartSeconds: timbrePreset.answerPianoBodyStartSeconds,
+        bodyFadeSeconds: timbrePreset.answerPianoBodyFadeSeconds,
       }
     );
-    mixPitchedSolfegeSequence(samples, sampleRate, buffers, round.melody, round.speechStart, {
-      gain: AUTO_SOLFEGE_VOICE_GAIN,
-      pan: AUTO_SOLFEGE_VOICE_PAN,
-      fadeInSeconds: 0.006,
-      fadeOutSeconds: 0.05,
-    });
+    mixPitchedSolfegeSequence(
+      samples,
+      sampleRate,
+      buffers,
+      speechBuffers,
+      round.melody,
+      round.speechStart,
+      {
+        gain: timbrePreset.solfegeVoiceGain * answerModeConfig.solfegeGainScale,
+        pan: AUTO_SOLFEGE_VOICE_PAN,
+        fadeInSeconds: answerModeConfig.solfegeFadeInSeconds,
+        fadeOutSeconds: answerModeConfig.solfegeFadeOutSeconds,
+        voiceSeconds: answerModeConfig.voiceSeconds,
+        voiceStepSeconds: answerModeConfig.voiceStepSeconds,
+        timbrePreset,
+      }
+    );
   });
 
   const peak = getMixPeak(samples);
@@ -2274,6 +3095,13 @@ function createAutoMelodyPracticeUI() {
   const defaultMelodyLength = gameSettings.melodyLength || 4;
   const defaultDifficulty = gameSettings.startingDifficulty || 0;
   const defaultWaitSeconds = 5;
+  const defaultTimbrePreset =
+    localStorage.getItem('autoMelodyTimbrePreset') || AUTO_SOLFEGE_DEFAULT_TIMBRE;
+  const defaultAnswerMode =
+    localStorage.getItem('autoMelodyAnswerMode') || AUTO_ANSWER_MODE_DEFAULT;
+  const defaultSolfegeClarity = normalizeAutoSolfegeClarity(
+    localStorage.getItem('autoMelodySolfegeClarity') ?? AUTO_SOLFEGE_CLARITY_DEFAULT
+  );
 
   return `
             <h3>旋律跟听</h3>
@@ -2301,6 +3129,33 @@ function createAutoMelodyPracticeUI() {
                             `<option value="${seconds}" ${seconds === defaultWaitSeconds ? 'selected' : ''}>${seconds}秒</option>`
                         ).join('')}
                     </select>
+                </div>
+                <div class="difficulty-selection">
+                    <label for="auto-timbre-preset">音色</label>
+                    <select id="auto-timbre-preset">
+                        ${renderAutoSolfegeTimbreOptions(defaultTimbrePreset)}
+                    </select>
+                </div>
+                <div class="difficulty-selection">
+                    <label for="auto-answer-mode">公布</label>
+                    <select id="auto-answer-mode">
+                        ${renderAutoAnswerModeOptions(defaultAnswerMode)}
+                    </select>
+                </div>
+                <div class="difficulty-selection auto-clarity-selection">
+                    <label for="auto-solfege-clarity">唱名</label>
+                    <div class="auto-clarity-control">
+                        <input
+                            id="auto-solfege-clarity"
+                            type="range"
+                            min="${AUTO_SOLFEGE_CLARITY_MIN}"
+                            max="${AUTO_SOLFEGE_CLARITY_MAX}"
+                            step="${AUTO_SOLFEGE_CLARITY_STEP}"
+                            value="${defaultSolfegeClarity}"
+                            aria-label="唱名清晰度"
+                        >
+                        <output id="auto-solfege-clarity-value" for="auto-solfege-clarity">${defaultSolfegeClarity}%</output>
+                    </div>
                 </div>
             </div>
             <div class="compact-container auto-melody-layout">
@@ -2337,6 +3192,10 @@ function initAutoMelodyPracticeListeners() {
   const lengthSelect = document.getElementById('auto-melody-length');
   const rangeSelect = document.getElementById('auto-melody-range');
   const delaySelect = document.getElementById('auto-answer-delay');
+  const timbreSelect = document.getElementById('auto-timbre-preset');
+  const answerModeSelect = document.getElementById('auto-answer-mode');
+  const clarityInput = document.getElementById('auto-solfege-clarity');
+  const clarityValue = document.getElementById('auto-solfege-clarity-value');
   const buildPlayBtn = document.getElementById('auto-build-play');
   const audioElement = document.getElementById('auto-melody-audio');
   const statusDisplay = document.getElementById('auto-playback-status');
@@ -2349,7 +3208,17 @@ function initAutoMelodyPracticeListeners() {
       melodyLength: parseInt(lengthSelect.value),
       rangeIndex: parseInt(rangeSelect.value),
       answerDelay: parseInt(delaySelect.value),
+      timbrePreset: timbreSelect.value,
+      answerMode: answerModeSelect.value,
+      solfegeClarity: normalizeAutoSolfegeClarity(clarityInput.value),
     };
+  }
+
+  function updateClarityValue() {
+    const clarity = normalizeAutoSolfegeClarity(clarityInput.value);
+    clarityInput.value = String(clarity);
+    clarityValue.textContent = `${clarity}%`;
+    localStorage.setItem('autoMelodySolfegeClarity', String(clarity));
   }
 
   function renderAnswerLabels(labels, hidden = false) {
@@ -2508,18 +3377,34 @@ function initAutoMelodyPracticeListeners() {
     }
   }
 
-  [lengthSelect, rangeSelect, delaySelect].forEach((select) => {
-    select.addEventListener('change', () => {
-      if (session || audioElement.src) stopPlayback();
-      renderAnswerLabels(
-        Array.from({ length: parseInt(lengthSelect.value) }, () => '?'),
-        false
-      );
-      roundList.innerHTML = '';
-      statusDisplay.textContent = '参数已更新';
-      showInlineResult(resultDisplay, '', 'info');
-    });
-  });
+  function handleOptionsChanged(source) {
+    if (source === timbreSelect) {
+      localStorage.setItem('autoMelodyTimbrePreset', timbreSelect.value);
+    }
+    if (source === answerModeSelect) {
+      localStorage.setItem('autoMelodyAnswerMode', answerModeSelect.value);
+    }
+    if (source === clarityInput) {
+      updateClarityValue();
+    }
+    if (session || audioElement.src) stopPlayback();
+    renderAnswerLabels(
+      Array.from({ length: parseInt(lengthSelect.value) }, () => '?'),
+      false
+    );
+    roundList.innerHTML = '';
+    statusDisplay.textContent = '参数已更新';
+    showInlineResult(resultDisplay, '', 'info');
+  }
+
+  clarityInput.addEventListener('input', updateClarityValue);
+  [lengthSelect, rangeSelect, delaySelect, timbreSelect, answerModeSelect, clarityInput].forEach(
+    (control) => {
+      control.addEventListener('change', () => {
+        handleOptionsChanged(control);
+      });
+    }
+  );
 
   buildPlayBtn.addEventListener('click', handlePrimaryPlaybackAction);
   audioElement.addEventListener('timeupdate', updatePlaybackState);

@@ -145,6 +145,7 @@ const AUTO_ANSWER_PIANO_BODY_FADE_SECONDS = 0.22;
 const AUTO_ANSWER_PIANO_PAN = -0.04;
 const AUTO_SOLFEGE_VOICE_GAIN = 0.44;
 const AUTO_SOLFEGE_VOICE_PAN = 0;
+const AUTO_SOLFEGE_PIANO_BLEND = 0.58;
 const AUTO_ROUND_GAP_SECONDS = 1.1;
 const INTERVAL_SEMITONE_NAMES = {
   0: '同音',
@@ -248,6 +249,7 @@ const SOLFEGE_SHARP_PREFIX_PROFILE = {
 let audioContext = null;
 const audioBufferCache = {};
 const pitchedSolfegeSampleCache = {};
+const audioBufferPeakCache = new WeakMap();
 let currentPlayingSource = null;
 
 // 调试模式
@@ -1035,6 +1037,51 @@ function getDeterministicNoise(index, seed) {
   return (value - Math.floor(value)) * 2 - 1;
 }
 
+function getAudioBufferPeak(sourceBuffer) {
+  if (!sourceBuffer) return 0;
+  const cachedPeak = audioBufferPeakCache.get(sourceBuffer);
+  if (cachedPeak !== undefined) return cachedPeak;
+
+  let peak = 0;
+  for (let channel = 0; channel < sourceBuffer.numberOfChannels; channel++) {
+    const data = sourceBuffer.getChannelData(channel);
+    for (let index = 0; index < sourceBuffer.length; index++) {
+      peak = Math.max(peak, Math.abs(data[index]));
+    }
+  }
+
+  audioBufferPeakCache.set(sourceBuffer, peak);
+  return peak;
+}
+
+function getAudioBufferSampleAtTime(sourceBuffer, time) {
+  if (!sourceBuffer || time < 0) return 0;
+
+  const sourceIndex = time * sourceBuffer.sampleRate;
+  const lowerIndex = Math.floor(sourceIndex);
+  if (lowerIndex < 0 || lowerIndex >= sourceBuffer.length - 1) return 0;
+
+  const progress = sourceIndex - lowerIndex;
+  let value = 0;
+  for (let channel = 0; channel < sourceBuffer.numberOfChannels; channel++) {
+    const data = sourceBuffer.getChannelData(channel);
+    value += data[lowerIndex] * (1 - progress) + data[lowerIndex + 1] * progress;
+  }
+
+  return value / sourceBuffer.numberOfChannels;
+}
+
+function getPianoExcitationSample(sourceBuffer, time) {
+  if (!sourceBuffer) return 0;
+
+  const peak = getAudioBufferPeak(sourceBuffer);
+  if (peak <= 0) return 0;
+
+  const normalizedSample = getAudioBufferSampleAtTime(sourceBuffer, time) / peak;
+  const bodyLift = 0.74 + 0.26 * Math.exp(-time / 0.55);
+  return Math.tanh(normalizedSample * 1.75) * bodyLift;
+}
+
 function getConsonantNoise(profile, index, sampleRate) {
   const consonantSeconds = profile.consonantSeconds || 0;
   if (consonantSeconds <= 0) return 0;
@@ -1070,7 +1117,7 @@ function getVoiceEnvelope(index, sampleRate, sampleCount, profile) {
   return Math.min(attack, release) * vowelOpen;
 }
 
-function getVoicedSample(harmonics, frequency, time, duration, profile) {
+function getVoicedSample(harmonics, frequency, time, duration, profile, pianoExcitation) {
   const vibratoStart = Math.max(0.18, duration * 0.28);
   const vibratoDepth = time > vibratoStart ? 0.0025 : 0;
   const vibrato = 1 + vibratoDepth * Math.sin(2 * Math.PI * 5.2 * (time - vibratoStart));
@@ -1087,10 +1134,21 @@ function getVoicedSample(harmonics, frequency, time, duration, profile) {
       ? Math.sin(2 * Math.PI * frequency * time) * 0.2
       : 0;
 
-  return value + nasalBlend;
+  const voiceSource = value + nasalBlend;
+  return (
+    voiceSource * (1 - AUTO_SOLFEGE_PIANO_BLEND * 0.62) + pianoExcitation * AUTO_SOLFEGE_PIANO_BLEND
+  );
 }
 
-function mixSungSyllableSamples(samples, sampleRate, frequency, startTime, duration, profile) {
+function mixSungSyllableSamples(
+  samples,
+  sampleRate,
+  frequency,
+  startTime,
+  duration,
+  profile,
+  pianoSourceBuffer
+) {
   const startSample = Math.max(0, Math.floor(startTime * sampleRate));
   const sampleCount = Math.min(Math.floor(duration * sampleRate), samples.length - startSample);
   if (sampleCount <= 0) return;
@@ -1100,7 +1158,8 @@ function mixSungSyllableSamples(samples, sampleRate, frequency, startTime, durat
   for (let i = 0; i < sampleCount; i++) {
     const time = i / sampleRate;
     const envelope = getVoiceEnvelope(i, sampleRate, sampleCount, profile);
-    const voiced = getVoicedSample(harmonics, frequency, time, duration, profile);
+    const pianoExcitation = getPianoExcitationSample(pianoSourceBuffer, time);
+    const voiced = getVoicedSample(harmonics, frequency, time, duration, profile, pianoExcitation);
     const consonantNoise = getConsonantNoise(profile, i, sampleRate);
     samples[startSample + i] += (voiced * envelope + consonantNoise) * 0.92;
   }
@@ -1121,14 +1180,17 @@ function normalizeSolfegeSamples(samples) {
   return samples;
 }
 
-function createPitchedSolfegeSamples(note, sampleRate, duration) {
+function createPitchedSolfegeSamples(note, sampleRate, duration, pianoSourceBuffer) {
   const normalizedNote = normalizeNoteName(note) || note;
   const frequency = noteToFrequency(normalizedNote);
   if (!frequency) {
     throw new Error(`无法为唱名生成目标音高: ${note}`);
   }
 
-  const cacheKey = `${normalizedNote}:${sampleRate}:${duration}`;
+  const sourceKey = pianoSourceBuffer
+    ? `${pianoSourceBuffer.sampleRate}:${pianoSourceBuffer.length}`
+    : 'no-piano';
+  const cacheKey = `${normalizedNote}:${sampleRate}:${duration}:${sourceKey}`;
   if (pitchedSolfegeSampleCache[cacheKey]) {
     return pitchedSolfegeSampleCache[cacheKey];
   }
@@ -1145,7 +1207,8 @@ function createPitchedSolfegeSamples(note, sampleRate, duration) {
       frequency,
       0,
       prefixDuration,
-      SOLFEGE_SHARP_PREFIX_PROFILE
+      SOLFEGE_SHARP_PREFIX_PROFILE,
+      pianoSourceBuffer
     );
     mixSungSyllableSamples(
       samples,
@@ -1153,10 +1216,19 @@ function createPitchedSolfegeSamples(note, sampleRate, duration) {
       frequency,
       mainStart,
       duration - mainStart,
-      baseProfile
+      baseProfile,
+      pianoSourceBuffer
     );
   } else {
-    mixSungSyllableSamples(samples, sampleRate, frequency, 0, duration, baseProfile);
+    mixSungSyllableSamples(
+      samples,
+      sampleRate,
+      frequency,
+      0,
+      duration,
+      baseProfile,
+      pianoSourceBuffer
+    );
   }
 
   pitchedSolfegeSampleCache[cacheKey] = normalizeSolfegeSamples(samples);
@@ -1187,9 +1259,14 @@ function mixMonoSamples(target, sampleRate, sourceSamples, startTime, duration, 
   }
 }
 
-function mixPitchedSolfegeSequence(target, sampleRate, melody, startTime, options) {
+function mixPitchedSolfegeSequence(target, sampleRate, buffers, melody, startTime, options) {
   melody.forEach((note, index) => {
-    const samples = createPitchedSolfegeSamples(note, sampleRate, AUTO_SOLFEGE_VOICE_SECONDS);
+    const samples = createPitchedSolfegeSamples(
+      note,
+      sampleRate,
+      AUTO_SOLFEGE_VOICE_SECONDS,
+      buffers[note]
+    );
     mixMonoSamples(
       target,
       sampleRate,
@@ -1287,7 +1364,7 @@ async function createAutoMelodyAudioBlob(session) {
         bodyFadeSeconds: AUTO_ANSWER_PIANO_BODY_FADE_SECONDS,
       }
     );
-    mixPitchedSolfegeSequence(samples, sampleRate, round.melody, round.speechStart, {
+    mixPitchedSolfegeSequence(samples, sampleRate, buffers, round.melody, round.speechStart, {
       gain: AUTO_SOLFEGE_VOICE_GAIN,
       pan: AUTO_SOLFEGE_VOICE_PAN,
       fadeInSeconds: 0.006,

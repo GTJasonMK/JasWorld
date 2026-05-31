@@ -522,32 +522,6 @@ label {
   flex-wrap: wrap;
 }
 
-.auto-clarity-selection {
-  flex: 1 1 230px;
-  min-width: 230px;
-}
-
-.auto-clarity-control {
-  display: grid;
-  grid-template-columns: minmax(120px, 1fr) 48px;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-}
-
-.auto-clarity-control input[type='range'] {
-  width: 100%;
-}
-
-.auto-clarity-control output {
-  color: var(--text-color);
-  font-size: 13px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  opacity: 0.86;
-}
-
 .auto-melody-layout {
   grid-template-columns: minmax(280px, 0.95fr) minmax(320px, 1.05fr);
 }
@@ -765,8 +739,6 @@ label {
 
   .difficulty-selection,
   .difficulty-selection select,
-  .auto-clarity-control,
-  .auto-clarity-control input[type='range'],
   .play-button,
   #new-melody,
   #check-melody,
@@ -774,10 +746,6 @@ label {
   #check-intervals,
   .secondary-action {
     width: 100%;
-  }
-
-  .auto-clarity-selection {
-    min-width: 0;
   }
 
   .game-stats {

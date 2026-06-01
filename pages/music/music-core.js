@@ -147,8 +147,8 @@ function showInlineResult(element, message, type = 'info') {
 }
 
 // 旋律长度选项
-const MELODY_LENGTH_OPTIONS = [3, 4, 5, 7, 9];
-const INTERVAL_MELODY_LENGTH_OPTIONS = [3, 4, 5, 6, 7];
+const MELODY_LENGTH_OPTIONS = [2, 3, 4, 5, 7, 9];
+const INTERVAL_MELODY_LENGTH_OPTIONS = [2, 3, 4, 5, 6, 7];
 const INTERVAL_TRAINING_NOTES = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5'];
 const INTERVAL_MAX_SEMITONES = 12;
 const AUTO_MELODY_WAIT_OPTIONS = [2, 3, 5, 8, 12];
